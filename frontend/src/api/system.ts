@@ -103,6 +103,10 @@ export async function systemInfo(): Promise<SystemInfo> {
   return apiJson<SystemInfo>('/system/info');
 }
 
+export async function setEnvVar(key: string, value: string): Promise<{ key: string; set: boolean }> {
+  return apiPost<{ key: string; set: boolean }>('/system/set-env', { key, value });
+}
+
 // ── Logs (polled every 5s) ───────────────────────────────────────────────
 
 export async function systemLogs(tail: number = 300): Promise<LogsResponse> {

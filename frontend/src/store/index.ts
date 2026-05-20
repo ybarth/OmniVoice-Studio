@@ -55,6 +55,7 @@ export const useAppStore = create<AppStore>()(
       // Only persist user prefs + glossary. Pipeline / transient state is opt-out.
       partialize: (s) => ({
         translateQuality:           s.translateQuality,
+        cloneTranslateProvider:     s.cloneTranslateProvider,
         dualSubs:                   s.dualSubs,
         burnSubs:                   s.burnSubs,
         glossaryVisible:            s.glossaryVisible,

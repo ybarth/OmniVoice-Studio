@@ -10,13 +10,23 @@
  */
 
 // ── Engines (Phase 3 / 4.6) ──────────────────────────────────────────────
-export type EngineFamily = 'tts' | 'asr' | 'llm';
+export type EngineFamily = 'tts' | 'asr' | 'llm' | 'translation';
 
 export interface EngineBackend {
   id: string;
   display_name: string;
-  available: boolean;
-  reason: string | null;
+  available?: boolean;
+  reason?: string | null;
+  installed?: boolean;
+  availability_reason?: string | null;
+  dependency_installed?: boolean;
+  model_installed?: boolean | null;
+  model_repo_id?: string;
+  pip_package?: string | null;
+  runtime_status?: string | null;
+  runtime_detail?: string | null;
+  runtime_progress_pct?: number | null;
+  running?: boolean;
 }
 
 export interface EngineFamilyResponse {
@@ -28,6 +38,7 @@ export interface AllEnginesResponse {
   tts: EngineFamilyResponse;
   asr: EngineFamilyResponse;
   llm: EngineFamilyResponse;
+  translation?: EngineFamilyResponse & { sandboxed?: boolean };
 }
 
 export interface SelectEngineResponse {
@@ -44,11 +55,26 @@ export interface SystemInfo {
   device?: string;
   data_dir?: string;
   outputs_dir?: string;
+  storage_root?: string | null;
+  storage_volume?: string | null;
+  storage_external?: boolean;
+  hf_cache_dir?: string;
   model_checkpoint?: string;
   asr_model?: string;
   translate_provider?: string;
   idle_timeout_seconds?: number;
   has_hf_token?: boolean;
+  credentials?: CredentialStatus[];
+}
+
+export interface CredentialStatus {
+  key: string;
+  label: string;
+  category: string;
+  configured: boolean;
+  secret?: boolean;
+  description?: string;
+  source?: string | null;
 }
 
 export interface ModelStatus {

@@ -19,10 +19,21 @@ try:
         dotenv.load_dotenv(_project_env, override=False)
     # Also load the durable per-user config so env vars set once survive
     # Tauri/Finder launches that don't inherit a shell environment.
-    _user_env = os.path.expanduser("~/.config/omnivoice/env")
+    try:
+        from core.env_store import user_env_path
+        _user_env = str(user_env_path())
+    except Exception:
+        _user_env = os.path.expanduser("~/.config/omnivoice/env")
     if os.path.isfile(_user_env):
         dotenv.load_dotenv(_user_env, override=False)
 except ImportError:
+    pass
+
+try:
+    from core.storage import configure_storage_environment
+
+    configure_storage_environment()
+except Exception:
     pass
 
 # ── cuDNN 8 library preload ─────────────────────────────────────────────
@@ -56,14 +67,6 @@ if sys.platform != "darwin":  # macOS has no CUDA
                     pass
         except Exception:
             pass
-
-# Route HF/Torch caches to a single external directory when requested.
-_cache_dir = os.environ.get("OMNIVOICE_CACHE_DIR")
-if _cache_dir:
-    os.makedirs(_cache_dir, exist_ok=True)
-    os.environ["HF_HOME"] = _cache_dir
-    os.environ["HF_HUB_CACHE"] = _cache_dir
-    os.environ["TORCH_HOME"] = _cache_dir
 
 # ── Windows symlink fix ─────────────────────────────────────────────────────
 # HuggingFace Hub creates NTFS symlinks in its cache to deduplicate blobs

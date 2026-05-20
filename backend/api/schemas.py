@@ -27,12 +27,17 @@ class SystemInfoResponse(BaseModel):
 
     data_dir: str
     outputs_dir: str
+    storage_root: str | None = None
+    storage_volume: str | None = None
+    storage_external: bool = False
+    hf_cache_dir: str = ""
     crash_log_path: str
     idle_timeout_seconds: int
     model_checkpoint: str = "unknown"
     asr_model: str = "unknown"
     translate_provider: str = "unknown"
     has_hf_token: bool = False
+    credentials: list[dict] = Field(default_factory=list)
     device: str = "cpu"
     python: str = ""
     platform: str = ""
@@ -46,7 +51,7 @@ class ModelStatusResponse(BaseModel):
     status: str = Field(description="idle | loading | ready")
     checkpoint: str | None = None
     loaded_at: str | None = None
-    sub_stage: str | None = Field(None, description="Current loading sub-stage: importing | loading_weights | loading_asr | compiling | ready | error")
+    sub_stage: str | None = Field(None, description="Current loading sub-stage: queued | importing | loading_weights | loading_asr | compiling | ready | error")
     detail: str | None = Field(None, description="Human-readable detail of current loading phase")
     error: str | None = Field(None, description="Error message if loading failed")
 

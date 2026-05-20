@@ -14,6 +14,7 @@ a backend without Settings silently undoing it.
 """
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+import os
 
 from core import prefs
 from services import tts_backend, asr_backend, llm_backend, translation_engines
@@ -41,6 +42,11 @@ def list_all_engines():
         "llm": {
             "active": llm_backend.active_backend_id(),
             "backends": llm_backend.list_backends(),
+        },
+        "translation": {
+            "active": os.environ.get("TRANSLATE_PROVIDER", "argos"),
+            "backends": translation_engines.list_engines(),
+            "sandboxed": translation_engines.is_frozen(),
         },
     }
 

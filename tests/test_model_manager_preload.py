@@ -7,10 +7,16 @@ import pytest
 
 
 @pytest.fixture
-def model_manager(monkeypatch):
+def model_manager(monkeypatch, tmp_path):
+    monkeypatch.delenv("OMNIVOICE_DATA_DIR", raising=False)
+    monkeypatch.delenv("OMNIVOICE_CACHE_DIR", raising=False)
+    monkeypatch.delenv("HF_HOME", raising=False)
+    monkeypatch.delenv("HF_HUB_CACHE", raising=False)
+    monkeypatch.delenv("HUGGINGFACE_HUB_CACHE", raising=False)
+    monkeypatch.setenv("OMNIVOICE_STORAGE_ROOT", str(tmp_path / "omnivoice"))
+
     for mod_name in ("core.config", "services.model_manager"):
-        if getattr(sys.modules.get(mod_name), "__file__", None) is None:
-            sys.modules.pop(mod_name, None)
+        sys.modules.pop(mod_name, None)
 
     import services.model_manager as mm
 
@@ -75,3 +81,43 @@ def test_load_model_can_preload_pytorch_whisper_when_requested(model_manager, mo
     model_manager._load_model_sync()
 
     assert calls[0][1]["load_asr"] is True
+
+
+def test_model_status_does_not_report_stale_ready_when_unloaded(model_manager):
+    model_manager.model = None
+    model_manager._loading_detail.update({
+        "sub_stage": "ready",
+        "detail": "Model ready",
+        "error": None,
+        "progress": 100,
+    })
+
+    status = model_manager.get_model_status()
+
+    assert status["status"] == "idle"
+    assert "detail" not in status
+    assert "progress" not in status
+
+
+@pytest.mark.asyncio
+async def test_get_model_uses_internal_gpu_pool_accessor(model_manager, monkeypatch):
+    loaded = SimpleNamespace(name="loaded-model")
+    calls = []
+
+    class InlineExecutor:
+        def submit(self, fn, *args, **kwargs):
+            from concurrent.futures import Future
+
+            calls.append(fn)
+            fut = Future()
+            try:
+                fut.set_result(fn(*args, **kwargs))
+            except Exception as exc:
+                fut.set_exception(exc)
+            return fut
+
+    monkeypatch.setattr(model_manager, "_get_gpu_pool", lambda: InlineExecutor())
+    monkeypatch.setattr(model_manager, "_load_model_sync", lambda: loaded)
+
+    assert await model_manager.get_model() is loaded
+    assert calls == [model_manager._load_model_sync]

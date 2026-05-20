@@ -232,12 +232,16 @@ def get_best_device():
 
     return "cpu"
 
-def _set_loading(sub_stage: str, detail: str = "", error: str | None = None, progress: float | None = None):
+def _set_loading(sub_stage: str | None, detail: str = "", error: str | None = None, progress: float | None = None):
     """Update the loading detail dict atomically."""
     _loading_detail["sub_stage"] = sub_stage
     _loading_detail["detail"] = detail
     _loading_detail["error"] = error
     _loading_detail["progress"] = progress
+
+
+def _clear_loading():
+    _set_loading(None, "", None, None)
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -323,7 +327,8 @@ async def get_model():
     async with _model_lock:
         if model is None:
             loop = asyncio.get_running_loop()
-            model = await loop.run_in_executor(_gpu_pool, _load_model_sync)
+            _set_loading("queued", "Waiting for model worker…")
+            model = await loop.run_in_executor(_get_gpu_pool(), _load_model_sync)
     return model
 
 
@@ -354,6 +359,7 @@ async def preload_model():
         async with _model_lock:
             if model is None:
                 loop = asyncio.get_running_loop()
+                _set_loading("queued", "Waiting for model worker…")
                 model = await loop.run_in_executor(_get_gpu_pool(), _load_model_sync)
         logger.info("Preload complete — model ready.")
     except Exception as e:
@@ -375,7 +381,7 @@ def get_model_status():
     }
     # Attach sub-stage detail when loading or after an error
     sub = _loading_detail.get("sub_stage")
-    if sub:
+    if sub and (is_loading or is_loaded or sub == "error"):
         result["sub_stage"] = sub
         result["detail"] = _loading_detail.get("detail", "")
         progress = _loading_detail.get("progress")
@@ -395,6 +401,7 @@ async def idle_worker():
             if model is not None and time.time() - _last_used > _IDLE_TIMEOUT_SECONDS:
                 logger.info("Idle timeout reached. Unloading OmniVoice model to free VRAM.")
                 model = None
+                _clear_loading()
                 free_vram()
 
 def free_vram():

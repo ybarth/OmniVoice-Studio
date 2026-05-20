@@ -16,6 +16,7 @@ import { LANG_CODES } from '../utils/languages';
 import { formatTime } from '../utils/format';
 import { API } from '../api/client';
 import { listTranslationEngines, installTranslationEngine } from '../api/engines';
+import { translationEngineOptionLabel } from '../utils/translationEngineStatus';
 import toast from 'react-hot-toast';
 import { Button, Segmented, Badge, Progress } from '../ui';
 import GlossaryPanel from '../components/GlossaryPanel';
@@ -715,8 +716,13 @@ export default function DubTab(props) {
                           disabled={engineInstalling === translateProvider}
                           title={activeEngineEntry?.notes || 'Install this engine'}
                         >
-                          {engineInstalling === translateProvider ? '…installing' : `+ install ${activeEngineEntry?.pip_package || ''}`}
+                        {engineInstalling === translateProvider ? '…installing' : `+ install ${activeEngineEntry?.pip_package || ''}`}
                         </button>
+                      )}
+                      {activeEngineUnavailable && activeEngineEntry?.model_repo_id && activeEngineEntry?.model_installed === false && (
+                        <span className="dub-engine-install-chip dub-engine-install-chip--disabled" title="Download this model from Settings > Models">
+                          install in Models
+                        </span>
                       )}
                       {activeEngineUnavailable && enginesSandboxed && (
                         <span className="dub-engine-install-chip dub-engine-install-chip--disabled" title="Installs are disabled in packaged builds">
@@ -729,10 +735,11 @@ export default function DubTab(props) {
                         { id: 'argos', display_name: 'Argos (Fast Local)', installed: true },
                         { id: 'nllb', display_name: 'NLLB (Heavy Local)', installed: true },
                         { id: 'google', display_name: 'Google (Online)', installed: true },
-                        { id: 'openai', display_name: 'OpenAI (LLM)', installed: true },
+                        { id: 'openai', display_name: 'OpenAI (API)', installed: true },
+                        { id: 'openai-compatible', display_name: 'OpenAI-compatible LLM', installed: true },
                       ]).map(p => (
                         <option key={p.id} value={p.id}>
-                          {p.installed ? p.display_name : `${p.display_name} — needs install`}
+                          {translationEngineOptionLabel(p)}
                         </option>
                       ))}
                     </select>

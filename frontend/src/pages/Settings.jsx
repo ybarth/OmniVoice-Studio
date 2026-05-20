@@ -11,15 +11,18 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Cpu, FileText, Info, ShieldCheck, RefreshCw, Trash2, ExternalLink,
   CheckCircle, AlertCircle, Plug, Mic, MessageSquare, Download, Copy, Building2, KeyRound,
-  Keyboard,
+  Keyboard, Languages,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { openExternal } from '../api/external';
-import { systemLogs, systemLogsTauri, clearSystemLogs, clearTauriLogs } from '../api/system';
-import { useSysinfo, useModelStatus, useSystemInfo } from '../api/hooks';
+import { systemLogs, systemLogsTauri, clearSystemLogs, clearTauriLogs, setEnvVar } from '../api/system';
+import { useSysinfo, useModelStatus, useSystemInfo, useModelScanStatus } from '../api/hooks';
 import { listEngines, selectEngine } from '../api/engines';
 import { setupDownloadStreamUrl } from '../api/setup';
 import { getFrontendLogs, clearFrontendLogs } from '../utils/consoleBuffer';
+import { credentialBadgeLabel, credentialConfigured } from '../utils/credentialStatus';
+import { selectModelScanView } from '../utils/modelScanStatus';
+import { translationRuntimeLabel, translationEngineStatusTone } from '../utils/translationEngineStatus';
 import { Tabs, Segmented, Button, Badge, Panel, Table, Progress } from '../ui';
 import { useAppStore } from '../store';
 import './Settings.css';
@@ -38,6 +41,7 @@ const FAMILY_META = {
   tts: { label: 'TTS', icon: Cpu,           tint: 'brand'   },
   asr: { label: 'ASR', icon: Mic,           tint: 'info'    },
   llm: { label: 'LLM', icon: MessageSquare, tint: 'violet'  },
+  translation: { label: 'Translation', icon: Languages, tint: 'info' },
 };
 
 const LOG_SOURCES = [
@@ -68,6 +72,62 @@ function fmtBytes(n) {
   return `${Math.round(n / 1024)} KB`;
 }
 
+function shortPath(p) {
+  if (!p) return '—';
+  return String(p).replace(/^\/Users\/[^/]+/, '~');
+}
+
+function fmtElapsed(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return '';
+  if (ms < 1000) return `${ms} ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.round(ms / 60_000)}m`;
+}
+
+function ModelScanProgress({ scan, cacheDir, loading }) {
+  const isScanning = scan?.status === 'scanning' || loading;
+  const pct = Number.isFinite(scan?.progress_pct) ? scan.progress_pct : null;
+  const value = pct != null && pct > 0 ? pct : null;
+  const checked = scan?.total_models
+    ? `${scan.scanned_models || 0}/${scan.total_models} models`
+    : 'Preparing model scan';
+  const details = [
+    checked,
+    scan?.cached_repos != null ? `${scan.cached_repos} cached repos` : null,
+    scan?.installed_models != null ? `${scan.installed_models} installed` : null,
+    fmtElapsed(scan?.elapsed_ms || 0),
+  ].filter(Boolean);
+
+  return (
+    <div className={`models-scan ${isScanning ? 'is-active' : ''}`} role="status" aria-live="polite">
+      <div className="models-scan__top">
+        <span className="models-scan__title">
+          {scan?.status === 'error' ? 'Model scan needs attention' : (scan?.detail || 'Scanning model cache')}
+        </span>
+        <span className="models-scan__pct">
+          {pct != null ? `${Math.round(pct)}%` : 'Scanning…'}
+        </span>
+      </div>
+      <Progress
+        value={value}
+        tone={scan?.status === 'error' ? 'danger' : 'brand'}
+        size="sm"
+      />
+      <div className="models-scan__meta">
+        <span>{details.join(' · ')}</span>
+        <code title={scan?.cache_dir || cacheDir || ''}>{shortPath(scan?.cache_dir || cacheDir)}</code>
+      </div>
+      {scan?.current_repo_id && (
+        <div className="models-scan__repo">
+          <span>Now checking</span>
+          <code>{scan.current_repo_id}</code>
+        </div>
+      )}
+      {scan?.error && <span className="models-scan__error">{scan.error}</span>}
+    </div>
+  );
+}
+
 /** Deterministic muted HSL color from an org/user name in a repo_id. */
 function orgColor(repoId) {
   const org = (repoId || '').split('/')[0];
@@ -83,11 +143,17 @@ import { useModels, useRecommendations, useInstallModel, useDeleteModel } from '
  * user install / reinstall / delete individual models. Per-model download
  * progress is pulled from the shared /setup/download-stream SSE.
  */
-export function ModelStoreTab({ info, modelBadge }) {
+export function ModelStoreTab({ info, modelBadge, refetchInfo }) {
   const modelsQuery = useModels();
   const recoQuery = useRecommendations();
   const data = modelsQuery.data;
   const loading = modelsQuery.isLoading;
+  const scanQuery = useModelScanStatus(modelsQuery.isLoading || modelsQuery.isFetching);
+  const scan = selectModelScanView({
+    dataScan: data?.scan,
+    liveScan: scanQuery.data,
+    isFetching: modelsQuery.isLoading || modelsQuery.isFetching,
+  });
   const reco = recoQuery.data;
   const installMutation = useInstallModel();
   const deleteMutation = useDeleteModel();
@@ -127,21 +193,12 @@ export function ModelStoreTab({ info, modelBadge }) {
     if (!value) return;
     setHfSaving(true);
     try {
-      const { API } = await import('../api/client');
-      const res = await fetch(`${API}/system/set-env`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: 'HF_TOKEN', value }),
-      });
-      if (res.ok) {
-        toast.success('HuggingFace token set — faster downloads enabled');
-        setHfSaved(true);
-        setHfToken('');
-        setHfExpanded(false);
-      } else {
-        const d = await res.json().catch(() => ({}));
-        toast.error(d.detail || 'Failed to save token');
-      }
+      await setEnvVar('HF_TOKEN', value);
+      toast.success('HuggingFace token set — faster downloads enabled');
+      setHfSaved(true);
+      setHfToken('');
+      setHfExpanded(false);
+      await refetchInfo?.();
     } catch (e) { toast.error(`Save failed: ${e.message}`); }
     finally { setHfSaving(false); }
   };
@@ -354,6 +411,14 @@ export function ModelStoreTab({ info, modelBadge }) {
             <span className="models-row__repo">
               <code>{m.repo_id}</code>
               {m.note && <span className="models-row__note"> · {m.note}</span>}
+              {m.related_installed && !m.installed && (
+                <span
+                  className="models-row__note"
+                  title={(m.related_repos || []).map(r => `${r.repo_id}${r.cache_dir ? ` in ${r.cache_dir}` : ''}`).join('\n')}
+                >
+                  {' '}· related on T9: {(m.related_repos || []).map(r => r.repo_id).join(', ')}
+                </span>
+              )}
             </span>
             {rt.showBar && (
               <div className="models-row__progressline">
@@ -463,7 +528,7 @@ export function ModelStoreTab({ info, modelBadge }) {
     },
     {
       id: 'status',
-      accessorFn: m => m.installed ? 2 : (m.supported === false ? 0 : 1),
+      accessorFn: m => m.installed ? 3 : (m.related_installed ? 2 : (m.supported === false ? 0 : 1)),
       header: 'Status',
       size: 96,
       meta: { align: 'center', className: 'models-row__status' },
@@ -478,6 +543,8 @@ export function ModelStoreTab({ info, modelBadge }) {
               ? <Badge tone="warn" size="xs"><RefreshCw size={10} className="spinner" /> working</Badge>
               : m.installed
                 ? <Badge tone="success" size="xs">installed</Badge>
+                : m.related_installed
+                  ? <Badge tone="info" size="xs">variant found</Badge>
                 : rt.unsupported
                   ? <Badge tone="neutral" size="xs">{(m.platforms || []).join(', ')}</Badge>
                   : <Badge tone="neutral" size="xs">not installed</Badge>;
@@ -553,7 +620,7 @@ export function ModelStoreTab({ info, modelBadge }) {
       const q = String(value || '').trim().toLowerCase();
       if (!q) return true;
       const m = row.original;
-      return [m.repo_id, m.label, m.note, m.role]
+      return [m.repo_id, m.label, m.note, m.role, ...(m.related_repos || []).map(r => r.repo_id)]
         .filter(Boolean)
         .some(v => String(v).toLowerCase().includes(q));
     },
@@ -574,7 +641,7 @@ export function ModelStoreTab({ info, modelBadge }) {
     return (
       <section className="settings-section">
         <h2><Cpu size={16} color="#f3a5b6" /> Models</h2>
-        <div className="settings-muted">Loading…</div>
+        <ModelScanProgress scan={scan} cacheDir={info?.hf_cache_dir} loading />
       </section>
     );
   }
@@ -586,7 +653,7 @@ export function ModelStoreTab({ info, modelBadge }) {
         <div className="models-toolbar__stats">
           <span><strong>{fmtBytes(data.total_installed_bytes)}</strong></span>
           <span className="models-toolbar__sep">·</span>
-          <span className="models-toolbar__cache" title={data.hf_cache_dir}><code>{data.hf_cache_dir?.replace(/^\/Users\/[^/]+/, '~')}</code></span>
+          <span className="models-toolbar__cache" title={data.hf_cache_dir}><code>{shortPath(data.hf_cache_dir)}</code></span>
           {info && <span className="models-toolbar__sep">·</span>}
           {info && <span>{modelBadge}</span>}
         </div>
@@ -633,6 +700,14 @@ export function ModelStoreTab({ info, modelBadge }) {
           </Button>
         </div>
       </div>
+
+      {scan && (
+        <ModelScanProgress
+          scan={scan}
+          cacheDir={data.hf_cache_dir || info?.hf_cache_dir}
+          loading={modelsQuery.isFetching}
+        />
+      )}
 
       {reco && reco.all_installed && (
         <div className="reco-banner reco-banner--ok">
@@ -825,7 +900,7 @@ export function EnginesTab() {
   }
   if (!data) return null;
 
-  const fams = ['tts', 'asr', 'llm'].filter(f => data[f]);
+  const fams = ['tts', 'asr', 'llm', 'translation'].filter(f => data[f]);
   const currentFam = fams.includes(activeFam) ? activeFam : fams[0];
   const family = currentFam ? data[currentFam] : null;
   const famTint = currentFam ? FAMILY_META[currentFam].tint : 'neutral';
@@ -879,17 +954,37 @@ export function EnginesTab() {
             {family.backends.map(b => {
               const isActive = family.active === b.id;
               const isSwitching = switching === `${currentFam}:${b.id}`;
+              const isTranslation = currentFam === 'translation';
+              const isReady = isTranslation ? b.installed !== false : Boolean(b.available);
+              const reason = b.reason || b.availability_reason || '';
+              const translationStatus = isTranslation
+                ? translationRuntimeLabel(b)
+                : null;
+              const statusTone = isTranslation
+                ? translationEngineStatusTone(b)
+                : (isReady ? 'success' : 'warn');
+              const statusLabel = isTranslation
+                ? (b.installed === false
+                    ? (b.model_repo_id && b.model_installed === false ? 'model missing' : 'unavailable')
+                    : translationStatus)
+                : (isReady ? 'ready' : 'unavailable');
               return (
-                <div key={b.id} className={`models-row ${b.available ? 'is-ok' : 'is-off'}`}>
+                <div key={b.id} className={`models-row ${isReady ? 'is-ok' : 'is-off'}`}>
                   <div className="models-row__cell models-row__name" style={{ flex: 3 }}>
                     <span className="models-row__title">
                       {b.display_name}
-                      {isActive && <Badge tone={famTint} size="xs">active</Badge>}
+                      {isActive && !isTranslation && <Badge tone={famTint} size="xs">active</Badge>}
                     </span>
                     <span className="models-row__repo">
                       <code>{b.id}</code>
-                      {!b.available && b.reason && (
-                        <span className="models-row__note" title={b.reason}> · {b.reason}</span>
+                      {b.model_repo_id && (
+                        <span className="models-row__note"> · <code>{b.model_repo_id}</code></span>
+                      )}
+                      {!isReady && reason && (
+                        <span className="models-row__note" title={reason}> · {reason}</span>
+                      )}
+                      {isTranslation && b.runtime_detail && (
+                        <span className="models-row__note" title={b.runtime_detail}> · {b.runtime_detail}</span>
                       )}
                     </span>
                     {b.install_hint && (
@@ -898,13 +993,11 @@ export function EnginesTab() {
                       </span>
                     )}
                   </div>
-                  <div className="models-row__cell" style={{ width: 120, display: 'flex', justifyContent: 'center' }} title={b.available ? 'Installed and ready' : (b.reason || 'Not installed')}>
-                    {b.available
-                      ? <Badge tone="success" size="xs">ready</Badge>
-                      : <Badge tone="warn" size="xs">unavailable</Badge>}
+                  <div className="models-row__cell" style={{ width: 120, display: 'flex', justifyContent: 'center' }} title={isReady ? 'Installed and ready' : (reason || 'Not installed')}>
+                    <Badge tone={statusTone} size="xs">{statusLabel}</Badge>
                   </div>
                   <div className="models-row__cell models-row__actions" style={{ width: 90 }}>
-                    {!isActive && b.available && (
+                    {!isTranslation && !isActive && isReady && (
                       <Button
                         variant="subtle" size="sm"
                         onClick={() => onSelect(currentFam, b.id)}
@@ -952,7 +1045,7 @@ export default function Settings() {
   // TanStack Query — shared cache with App.jsx, no duplicate requests
   const { data: hw } = useSysinfo();
   const { data: status } = useModelStatus();
-  const { data: info } = useSystemInfo();
+  const { data: info, refetch: refetchInfo } = useSystemInfo();
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -991,6 +1084,10 @@ export default function Settings() {
       `- **ASR model:** ${info?.asr_model || '—'}`,
       `- **Translator:** ${info?.translate_provider || '—'}`,
       `- **HF token set:** ${info?.has_hf_token ? 'yes' : 'no'}`,
+      `- **Storage root:** ${info?.storage_root || '—'}`,
+      `- **Storage volume:** ${info?.storage_volume || '—'}`,
+      `- **External storage active:** ${info?.storage_external ? 'yes' : 'no'}`,
+      `- **HF cache directory:** ${info?.hf_cache_dir || '—'}`,
       `- **Data directory:** ${info?.data_dir || '—'}`,
       `- **Outputs directory:** ${info?.outputs_dir || '—'}`,
       `- **Crash log:** ${info?.crash_log_path || '—'}`,
@@ -1121,13 +1218,13 @@ export default function Settings() {
         className="settings-tabs-ui"
       />
 
-      {activeTab === 'models' && <ModelStoreTab info={info} modelBadge={modelBadge} />}
+      {activeTab === 'models' && <ModelStoreTab info={info} modelBadge={modelBadge} refetchInfo={refetchInfo} />}
 
       {activeTab === 'engines' && <EnginesTab />}
 
       {activeTab === 'capture' && <HotkeyTab />}
 
-      {activeTab === 'credentials' && <CredentialsTab info={info} />}
+      {activeTab === 'credentials' && <CredentialsTab info={info} refetchInfo={refetchInfo} />}
 
       {activeTab === 'logs' && (
         <section className="settings-section">
@@ -1204,6 +1301,11 @@ export default function Settings() {
           <Row label="ASR model"       value={info?.asr_model || '—'} mono />
           <Row label="Translator"      value={info?.translate_provider || '—'} />
           <Row label="HF token set"    value={info?.has_hf_token ? 'yes' : 'no'} />
+          <Row label="T9 storage"      value={info?.storage_external
+            ? <Badge tone="success"><CheckCircle size={11} /> active</Badge>
+            : <Badge tone="neutral">not detected</Badge>} />
+          <Row label="Storage root"    value={info?.storage_root || '—'} mono />
+          <Row label="Model cache"     value={info?.hf_cache_dir || '—'} mono />
           <Row label="Data directory"  value={info?.data_dir || '—'} mono />
           <Row label="Outputs"         value={info?.outputs_dir || '—'} mono />
           <Row label="Crash log"       value={info?.crash_log_path || '—'} mono />
@@ -1265,11 +1367,12 @@ export default function Settings() {
           </p>
           <Row label="Uploads stored at"   value={info?.data_dir ? `${info.data_dir}/` : '—'} mono />
           <Row label="Outputs stored at"   value={info?.outputs_dir || '—'} mono />
+          <Row label="Model installs"      value={info?.hf_cache_dir || '—'} mono />
           <Row label="Generation history"  value={<Badge tone="neutral">Local SQLite</Badge>} />
           <Row
             label="Network calls"
             value={
-              info?.translate_provider && ['google', 'deepl', 'mymemory', 'microsoft', 'openai'].includes(info.translate_provider)
+              info?.translate_provider && ['google', 'deepl', 'mymemory', 'microsoft', 'openai', 'openai-compatible'].includes(info.translate_provider)
                 ? <Badge tone="warn"><AlertCircle size={11} /> Translator is online: {info.translate_provider}</Badge>
                 : <Badge tone="success"><CheckCircle size={11} /> Offline translator</Badge>
             }
@@ -1293,13 +1396,62 @@ const CREDENTIAL_FIELDS = [
     placeholder: 'hf_xxxxxxxxxxxx',
     help: 'Required for speaker diarization and faster model downloads. Get yours at huggingface.co/settings/tokens.',
     link: 'https://huggingface.co/settings/tokens',
+    group: 'Model access',
+    secret: true,
   },
   {
     key: 'TRANSLATE_API_KEY',
-    label: 'Translation API Key',
+    label: 'OpenAI-compatible / Generic Translation Key',
     placeholder: 'API key',
-    help: 'Optional — for DeepL, OpenAI, or paid translation providers. Not needed for Google Translate (free tier).',
+    help: 'Used by LLM/OpenAI-compatible translation and as a fallback for paid translation engines.',
     link: null,
+    group: 'Translation',
+    secret: true,
+  },
+  {
+    key: 'OPENAI_API_KEY',
+    label: 'OpenAI API Key',
+    placeholder: 'sk-…',
+    help: 'Fallback key for OpenAI if TRANSLATE_API_KEY is not set.',
+    link: 'https://platform.openai.com/api-keys',
+    group: 'Translation',
+    secret: true,
+  },
+  {
+    key: 'DEEPL_API_KEY',
+    label: 'DeepL API Key',
+    placeholder: 'DeepL API key',
+    help: 'Used only by the DeepL translation engine.',
+    link: 'https://www.deepl.com/account/summary',
+    group: 'Translation',
+    secret: true,
+  },
+  {
+    key: 'MICROSOFT_API_KEY',
+    label: 'Microsoft Translator Key',
+    placeholder: 'Azure Translator key',
+    help: 'Used only by the Microsoft Translator engine.',
+    link: null,
+    group: 'Translation',
+    secret: true,
+  },
+  {
+    key: 'TRANSLATE_BASE_URL',
+    label: 'OpenAI-compatible Base URL',
+    placeholder: 'https://api.openai.com/v1 or http://localhost:11434/v1',
+    help: 'Optional endpoint for OpenAI-compatible providers, Ollama, or LM Studio.',
+    link: null,
+    group: 'Translation config',
+    secret: false,
+  },
+  {
+    key: 'TRANSLATE_MODEL',
+    label: 'Translation LLM Model',
+    placeholder: 'gpt-4o-mini',
+    help: 'Model name for OpenAI-compatible translation.',
+    link: null,
+    group: 'Translation config',
+    secret: false,
   },
 ];
 
@@ -1469,32 +1621,30 @@ function HotkeyTab() {
   );
 }
 
-function CredentialsTab({ info }) {
+function CredentialsTab({ info, refetchInfo }) {
   const [values, setValues] = useState({});
   const [saving, setSaving] = useState(null);
   const [saved, setSaved] = useState({});
+  const credentialStatuses = info?.credentials || [];
+  const fieldsWithStatus = CREDENTIAL_FIELDS.map(field => ({
+    ...field,
+    configured: credentialConfigured(credentialStatuses, saved, field.key),
+  }));
+  const translationFields = fieldsWithStatus.filter(field => field.group !== 'Model access');
+  const configuredTranslationCount = translationFields.filter(field => field.configured).length;
 
   const save = async (key) => {
     const value = (values[key] || '').trim();
     if (!value) return;
     setSaving(key);
     try {
-      const { API } = await import('../api/client');
-      const res = await fetch(`${API}/system/set-env`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key, value }),
-      });
-      if (res.ok) {
-        toast.success(`${key} saved for this session`);
-        setSaved(prev => ({ ...prev, [key]: true }));
-        setValues(prev => ({ ...prev, [key]: '' }));
-      } else {
-        const d = await res.json().catch(() => ({}));
-        toast.error(d.detail || 'Failed to save');
-      }
+      await setEnvVar(key, value);
+      toast.success(`${key} saved locally`);
+      setSaved(prev => ({ ...prev, [key]: true }));
+      setValues(prev => ({ ...prev, [key]: '' }));
+      await refetchInfo?.();
     } catch (e) {
-      toast.error(`Save failed: ${e.message}`);
+      toast.error(`Save failed: ${e?.message || e}`);
     } finally {
       setSaving(null);
     }
@@ -1504,23 +1654,46 @@ function CredentialsTab({ info }) {
     <section className="settings-section">
       <h2><KeyRound size={16} color="#fe8019" /> Credentials</h2>
       <p className="settings-prose">
-        API keys and tokens are set <strong>for this session only</strong>. For
-        persistence across restarts, set them as environment variables in your
-        shell profile.
+        API keys and tokens are saved locally on this machine and loaded when
+        OmniVoice starts. Secret values are never shown back in the UI.
       </p>
-      {CREDENTIAL_FIELDS.map(field => (
+
+      <div className="settings-credential-status" aria-label="Credential status">
+        <div className="settings-credential-status__head">
+          <span className="settings-credential-status__title">Translation credentials</span>
+          <Badge tone={configuredTranslationCount ? 'success' : 'warn'} size="xs">
+            {configuredTranslationCount}/{translationFields.length} configured
+          </Badge>
+        </div>
+        <div className="settings-credential-status__grid">
+          {translationFields.map(field => (
+            <div key={field.key} className="settings-credential-status__item">
+              <span className="settings-credential-status__meta">
+                <span>{field.label}</span>
+                <code>{field.key}</code>
+              </span>
+              <Badge tone={field.configured ? 'success' : 'warn'} size="xs">
+                {field.configured ? <CheckCircle size={10} /> : <AlertCircle size={10} />}
+                {credentialBadgeLabel(field.configured)}
+              </Badge>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {fieldsWithStatus.map(field => (
         <div key={field.key} className="settings-credential">
           <div className="settings-credential__header">
             <label className="settings-credential__label">{field.label}</label>
-            {field.key === 'HF_TOKEN' && (
-              <Badge tone={info?.has_hf_token || saved.HF_TOKEN ? 'success' : 'warn'} size="xs">
-                {info?.has_hf_token || saved.HF_TOKEN ? '✓ Set' : '✗ Not set'}
-              </Badge>
-            )}
+            <Badge tone={field.configured ? 'success' : 'warn'} size="xs">
+              {field.configured ? <CheckCircle size={10} /> : <AlertCircle size={10} />}
+              {credentialBadgeLabel(field.configured)}
+            </Badge>
+            <Badge tone="neutral" size="xs">{field.group}</Badge>
           </div>
           <div className="settings-credential__row">
             <input
-              type="password"
+              type={field.secret === false ? 'text' : 'password'}
               className="settings-credential__input"
               placeholder={field.placeholder}
               value={values[field.key] || ''}

@@ -1,6 +1,8 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useAppStore } from '../store';
-import { generateSpeech, audioUrlWithCacheBust } from '../api/generate';
+import { generateSpeech, generationStatus } from '../api/generate';
+import { translatePromptForSynthesis } from '../api/translate';
+import { buildPromptTranslationReceipt, shouldTranslateBeforeSynthesis } from '../utils/promptTranslation';
 import { playBlobAudio, playPing } from '../utils/media';
 import { probeAudioDuration } from '../utils/format';
 import { CLONE_MAX_SECONDS, PRESETS } from '../utils/constants';
@@ -29,13 +31,29 @@ export default function useTTS({ selectedProfile, setSelectedProfile, loadHistor
   const vdStates = useAppStore(s => s.vdStates);
   const mode = useAppStore(s => s.mode);
   const setSidebarTab = useAppStore(s => s.setSidebarTab);
+  const cloneTranslateProvider = useAppStore(s => s.cloneTranslateProvider);
 
   const [refAudio, setRefAudio] = useState(null);
   const [pendingTrimFile, setPendingTrimFile] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationTime, setGenerationTime] = useState(0);
+  const [synthesisProgress, setSynthesisProgress] = useState({
+    clientPhase: 'idle',
+    backendStatus: null,
+    streamProgressPct: null,
+    elapsedSeconds: 0,
+  });
+  const [lastPromptTranslation, setLastPromptTranslation] = useState(null);
   const timerRef = useRef(null);
+  const statusPollRef = useRef(null);
   const textAreaRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      clearInterval(timerRef.current);
+      clearInterval(statusPollRef.current);
+    };
+  }, []);
 
   const ingestRefAudio = useCallback(async (file) => {
     if (!file) { setRefAudio(null); return; }
@@ -63,22 +81,65 @@ export default function useTTS({ selectedProfile, setSelectedProfile, loadHistor
     if (preset.tags && !text.includes(preset.tags.trim())) insertTag(preset.tags);
   }, [text, insertTag]);
 
-  const handleGenerate = useCallback(async () => {
+  const handleGenerate = useCallback(async ({ translateBeforeSynthesis = false } = {}) => {
     if (!text.trim()) return toast.error("Please enter text");
     if (mode === 'clone' && !refAudio && !selectedProfile) return toast.error("Upload an audio or select a voice profile");
+    const effectiveRefText = refText.trim();
+    if (mode === 'clone' && !effectiveRefText) {
+      setSidebarTab('clone');
+      return toast.error("Add what the reference sample says in Reference Transcript before synthesizing");
+    }
     setIsGenerating(true);
     setGenerationTime(0);
+    setSynthesisProgress({
+      clientPhase: 'preparing',
+      backendStatus: null,
+      streamProgressPct: null,
+      elapsedSeconds: 0,
+    });
+    let receivedAudio = false;
     const st = Date.now();
     timerRef.current = setInterval(() => {
-      const elapsed = ((Date.now() - st) / 1000).toFixed(1);
-      setGenerationTime(prev => {
-        const suffix = /\(\d+%\)$/.exec(String(prev))?.[0];
-        return suffix ? `${elapsed} ${suffix}` : elapsed;
-      });
+      const elapsedSeconds = (Date.now() - st) / 1000;
+      setGenerationTime(elapsedSeconds.toFixed(1));
+      setSynthesisProgress(prev => ({ ...prev, elapsedSeconds }));
     }, 100);
     try {
+      const shouldTranslatePrompt = shouldTranslateBeforeSynthesis({ mode, translateBeforeSynthesis });
+      if (shouldTranslatePrompt) {
+        setSynthesisProgress(prev => ({
+          ...prev,
+          clientPhase: 'translating',
+          backendStatus: null,
+          streamProgressPct: null,
+        }));
+      }
+      const synthesisText = shouldTranslatePrompt
+        ? await translatePromptForSynthesis(text, language, cloneTranslateProvider)
+        : { text, translated: false, targetCode: null };
+      if (synthesisText.translated) {
+        toast.success(`Translated prompt to ${language} before synthesis`);
+      } else if (shouldTranslatePrompt) {
+        if (synthesisText.skippedReason === 'already-target-language') {
+          toast(`Prompt already looks like ${language}; synthesizing as-is`);
+        } else if (synthesisText.skippedReason === 'unsupported-language') {
+          throw new Error(`I don't know how to translate to ${language} yet`);
+        } else if (synthesisText.skippedReason === 'no-translatable-text') {
+          throw new Error('Add words outside bracket tags before translating');
+        } else if (synthesisText.skippedReason === 'unchanged-output') {
+          throw new Error('The translation engine returned the original text unchanged');
+        }
+      }
+      setSynthesisProgress(prev => ({
+        ...prev,
+        clientPhase: 'preparing',
+        streamProgressPct: null,
+      }));
+
       const formData = new FormData();
-      formData.append("text", text);
+      const requestId = globalThis.crypto?.randomUUID?.() || `gen-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      formData.append("text", synthesisText.text);
+      formData.append("request_id", requestId);
       if (language !== 'Auto') formData.append("language", language);
       formData.append("num_step", steps);
       formData.append("guidance_scale", cfg);
@@ -94,11 +155,12 @@ export default function useTTS({ selectedProfile, setSelectedProfile, loadHistor
       if (mode === 'clone') {
         if (selectedProfile) {
           formData.append("profile_id", selectedProfile);
+          if (effectiveRefText) formData.append("ref_text", effectiveRefText);
         } else if (refAudio) {
           const arrBuf = await refAudio.arrayBuffer();
           const safeBlob = new Blob([arrBuf], { type: refAudio.type });
           formData.append("ref_audio", safeBlob, refAudio.name || "audio.wav");
-          formData.append("ref_text", refText);
+          formData.append("ref_text", effectiveRefText);
         }
         if (instruct) formData.append("instruct", instruct);
       } else {
@@ -113,11 +175,37 @@ export default function useTTS({ selectedProfile, setSelectedProfile, loadHistor
         }
       }
 
+      setSynthesisProgress(prev => ({
+        ...prev,
+        clientPhase: 'requesting',
+        backendStatus: null,
+        streamProgressPct: null,
+      }));
+      clearInterval(statusPollRef.current);
+      const pollGenerationStatus = async () => {
+        try {
+          const status = await generationStatus(requestId);
+          setSynthesisProgress(prev => ({
+            ...prev,
+            backendStatus: status,
+          }));
+        } catch {
+          // The request may not have reached the backend yet; keep the local phase.
+        }
+      };
+      pollGenerationStatus();
+      statusPollRef.current = setInterval(pollGenerationStatus, 750);
+
       const response = await generateSpeech(formData);
       const reader = response.body.getReader();
       const chunks = [];
       let receivedLength = 0;
       const contentLength = parseInt(response.headers.get('Content-Length') || '0', 10);
+      setSynthesisProgress(prev => ({
+        ...prev,
+        clientPhase: 'receiving',
+        streamProgressPct: contentLength > 0 ? 0 : null,
+      }));
 
       while (true) {
         const { done, value } = await reader.read();
@@ -126,28 +214,73 @@ export default function useTTS({ selectedProfile, setSelectedProfile, loadHistor
         receivedLength += value.length;
         if (contentLength > 0) {
           const pct = Math.round((receivedLength / contentLength) * 100);
-          setGenerationTime(prev => `${prev.toString().split(' ')[0]} (${pct}%)`);
+          setSynthesisProgress(prev => ({
+            ...prev,
+            clientPhase: 'receiving',
+            streamProgressPct: pct,
+          }));
         }
       }
 
       const blob = new Blob(chunks, { type: 'audio/wav' });
-      try { await playBlobAudio(blob); } catch (e) {}
+      receivedAudio = true;
+      setSynthesisProgress(prev => ({
+        ...prev,
+        clientPhase: 'finalizing',
+        streamProgressPct: 100,
+      }));
+      const translationReceipt = buildPromptTranslationReceipt(text, language, synthesisText);
+      if (translationReceipt) setLastPromptTranslation(translationReceipt);
+      clearInterval(timerRef.current);
+      clearInterval(statusPollRef.current);
+      const elapsedSeconds = (Date.now() - st) / 1000;
+      setGenerationTime(elapsedSeconds.toFixed(1));
+      setSynthesisProgress(prev => ({
+        ...prev,
+        clientPhase: 'done',
+        backendStatus: {
+          ...(prev.backendStatus || {}),
+          status: 'done',
+          phase: 'done',
+          detail: 'Audio ready',
+          progress_pct: 100,
+        },
+        streamProgressPct: 100,
+        elapsedSeconds,
+      }));
+      setIsGenerating(false);
 
-      await loadHistory();
-      setSidebarTab('history');
+      playBlobAudio(blob).catch(() => toast.error('Playback failed'));
+      loadHistory()
+        .then(() => setSidebarTab('history'))
+        .catch(() => toast.error('Audio generated, but history refresh failed'));
       playPing();
     } catch (err) {
+      setSynthesisProgress(prev => ({
+        ...prev,
+        clientPhase: 'error',
+        backendStatus: {
+          ...(prev.backendStatus || {}),
+          status: 'error',
+          phase: 'error',
+          detail: err.message,
+          error: err.message,
+          progress_pct: null,
+        },
+      }));
       toast.error("Error: " + err.message);
     } finally {
       clearInterval(timerRef.current);
-      setIsGenerating(false);
+      clearInterval(statusPollRef.current);
+      if (!receivedAudio) setIsGenerating(false);
     }
-  }, [text, mode, selectedProfile, refAudio, refText, language, instruct, steps, cfg, speed, denoise, tShift, posTemp, classTemp, layerPenalty, postprocess, duration, vdStates, loadHistory, setSidebarTab]);
+  }, [text, mode, selectedProfile, refAudio, refText, language, instruct, steps, cfg, speed, denoise, tShift, posTemp, classTemp, layerPenalty, postprocess, duration, vdStates, cloneTranslateProvider, loadHistory, setSidebarTab]);
 
   return {
     refAudio, setRefAudio,
     pendingTrimFile, setPendingTrimFile,
-    isGenerating, generationTime,
+    isGenerating, generationTime, synthesisProgress,
+    lastPromptTranslation,
     textAreaRef,
     ingestRefAudio,
     insertTag, applyPreset,

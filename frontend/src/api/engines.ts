@@ -14,9 +14,17 @@ export interface TranslationEngine {
   category: 'offline' | 'online' | 'llm';
   needs_key: boolean;
   builtin?: boolean;
+  model_repo_id?: string;
+  model_size_gb?: number;
   notes?: string;
   installed: boolean;
+  dependency_installed?: boolean;
+  model_installed?: boolean | null;
   availability_reason: string;
+  runtime_status?: string;
+  runtime_detail?: string;
+  runtime_progress_pct?: number | null;
+  running?: boolean;
 }
 export interface TranslationEnginesResponse {
   engines: TranslationEngine[];

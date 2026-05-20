@@ -18,6 +18,11 @@ from services.rvc import apply_rvc, is_enabled as rvc_is_enabled
 from services.incremental import segment_fingerprint
 from services.watermark import embed_watermark
 from api.routers.dub_core import _get_job, _save_job
+from services.cantonese_guard import (
+    is_cantonese_target,
+    normalize_tts_language,
+    validate_spoken_cantonese_text,
+)
 
 logger = logging.getLogger("omnivoice.dub")
 
@@ -152,6 +157,11 @@ async def dub_generate(job_id: str, req: DubRequest):
                     torch.manual_seed(used_seed)
 
                 try:
+                    lang = normalize_tts_language(lang)
+                    if is_cantonese_target(lang):
+                        ok, reason = validate_spoken_cantonese_text(text)
+                        if not ok:
+                            raise ValueError(reason)
                     audios = _model.generate(
                         text=text, language=lang if lang != "Auto" else None,
                         ref_audio=ref_audio, ref_text=ref_text,
@@ -186,6 +196,7 @@ async def dub_generate(job_id: str, req: DubRequest):
                         nstep, retry_steps,
                     )
                     try:
+                        lang = normalize_tts_language(lang)
                         audios = _model.generate(
                             text=text, language=lang if lang != "Auto" else None,
                             ref_audio=ref_audio, ref_text=ref_text,
@@ -480,6 +491,11 @@ async def preview_segment(job_id: str, req: SegmentPreviewRequest):
                     instruct_str = row["instruct"]
 
         lang = req.language if req.language != "Auto" else None
+        if is_cantonese_target(lang):
+            ok, reason = validate_spoken_cantonese_text(req.text)
+            if not ok:
+                raise ValueError(reason)
+            lang = normalize_tts_language(lang)
         audios = _model.generate(
             text=req.text,
             language=lang,
@@ -515,4 +531,3 @@ async def preview_segment(job_id: str, req: SegmentPreviewRequest):
             "X-Audio-Duration": str(round(audio_tensor.shape[-1] / sr, 2)),
         },
     )
-

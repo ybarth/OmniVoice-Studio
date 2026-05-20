@@ -94,6 +94,7 @@ dependencies = [
     # Offline translation — listed as builtin in the engine registry so the
     # "Argos (Local, Fast)" option in the Dub tab works out-of-the-box.
     "argostranslate>=1.9.0",
+    "deep-translator>=1.11.4",
 ]
 
 [project.optional-dependencies]

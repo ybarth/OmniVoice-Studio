@@ -44,18 +44,49 @@ export interface KnownModel {
   required: boolean;
   note?: string;
   installed: boolean;
+  install_status?: 'installed' | 'related_found' | 'not_installed' | string;
   size_on_disk_bytes: number;
   nb_files: number;
+  cache_dir?: string | null;
+  related_installed?: boolean;
+  related_repos?: Array<{
+    repo_id: string;
+    size_on_disk: number;
+    nb_files: number;
+    cache_dir?: string | null;
+  }>;
+}
+
+export interface ModelScanStatus {
+  status: 'idle' | 'scanning' | 'complete' | 'error' | string;
+  stage: string;
+  detail: string;
+  progress_pct: number;
+  cache_dir: string;
+  cache_dirs?: string[];
+  current_repo_id: string | null;
+  total_models: number;
+  scanned_models: number;
+  cached_repos: number;
+  installed_models: number;
+  elapsed_ms: number;
+  error?: string | null;
 }
 
 export interface ModelList {
   models: KnownModel[];
   total_installed_bytes: number;
   hf_cache_dir: string;
+  hf_cache_dirs?: string[];
+  scan?: ModelScanStatus;
 }
 
 export async function listModels(): Promise<ModelList> {
   return apiJson<ModelList>('/models');
+}
+
+export async function modelScanStatus(): Promise<ModelScanStatus> {
+  return apiJson<ModelScanStatus>('/models/scan-status');
 }
 
 export async function installModel(repo_id: string): Promise<{ status: string; repo_id: string }> {
@@ -140,4 +171,3 @@ export interface PreflightReport {
 export async function preflight(): Promise<PreflightReport> {
   return apiJson<PreflightReport>('/setup/preflight');
 }
-

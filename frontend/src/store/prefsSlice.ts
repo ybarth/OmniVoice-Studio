@@ -22,8 +22,10 @@ export interface PrefsSlice {
    * for rapid-fire workflows where reviewing every stage is overkill.
    */
   reviewMode: 'on' | 'off';
+  cloneTranslateProvider: string;
 
   setTranslateQuality: (q: TranslateQuality) => void;
+  setCloneTranslateProvider: (provider: string) => void;
   setDualSubs: (on: boolean) => void;
   setBurnSubs: (on: boolean) => void;
   setGlossaryVisible: (on: boolean) => void;
@@ -39,8 +41,10 @@ export const createPrefsSlice: StateCreator<PrefsSlice, [], [], PrefsSlice> = (s
   burnSubs: false,
   glossaryVisible: true,
   reviewMode: 'on',
+  cloneTranslateProvider: 'hymt-1.8b',
 
   setTranslateQuality: (q) => set({ translateQuality: q }),
+  setCloneTranslateProvider: (provider) => set({ cloneTranslateProvider: provider }),
   setDualSubs:         (on) => set({ dualSubs: on }),
   setBurnSubs:         (on) => set({ burnSubs: on }),
   setGlossaryVisible:  (on) => set({ glossaryVisible: on }),

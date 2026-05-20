@@ -5,6 +5,10 @@
  */
 
 const isTauri = typeof window !== 'undefined' && !!(window.__TAURI_INTERNALS__ || window.__TAURI__);
+export const canUseTauriNativeApi = () => (
+  typeof window !== 'undefined'
+  && typeof window.__TAURI_INTERNALS__?.invoke === 'function'
+);
 
 // ── Tauri window maximise on double-click ─────────────────────────────
 let tauriWindow = null;

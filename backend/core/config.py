@@ -1,17 +1,10 @@
 import os
 import sys
 
-def get_app_data_dir():
-    custom_dir = os.environ.get("OMNIVOICE_DATA_DIR")
-    if custom_dir:
-        return custom_dir
-        
-    if sys.platform == "darwin":
-        return os.path.expanduser("~/Library/Application Support/OmniVoice")
-    elif sys.platform == "win32":
-        return os.path.join(os.environ.get("APPDATA", ""), "OmniVoice")
-    else:
-        return os.path.expanduser("~/.omnivoice")
+from core.storage import configure_storage_environment, get_app_data_dir
+
+
+configure_storage_environment()
 
 
 def _ensure_short_hf_cache_on_windows():

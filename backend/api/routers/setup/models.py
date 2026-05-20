@@ -8,15 +8,17 @@ Extracted from the monolithic ``setup.py`` to keep concerns separate:
 """
 from __future__ import annotations
 
+import json
 import logging
-import os
 import platform as _platform
 import sys
+import threading
 import time
 from pathlib import Path
-from typing import Optional
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends
+from core.storage import get_hf_cache_dir, get_hf_cache_dirs, t9_volume_path
 
 logger = logging.getLogger("omnivoice.setup.models")
 router = APIRouter()
@@ -116,21 +118,206 @@ def _model_supported(model: dict) -> bool:
 # ── HF Cache Helpers ───────────────────────────────────────────────────────
 
 def hf_cache_dir() -> str:
-    return (
-        os.environ.get("HF_HUB_CACHE")
-        or os.environ.get("HUGGINGFACE_HUB_CACHE")
-        or os.environ.get("HF_HOME")
-        or os.path.expanduser("~/.cache/huggingface")
-    )
+    return get_hf_cache_dir()
+
+
+def hf_cache_dirs() -> list[str]:
+    return get_hf_cache_dirs()
+
+
+def _local_model_roots() -> list[Path]:
+    volume = Path(t9_volume_path()).expanduser()
+    if not volume.is_dir():
+        return []
+    return [
+        volume / "ai-models" / "lmstudio-models",
+        volume / "ai-models" / "adaptive-cua" / "models",
+    ]
+
+
+def _local_repo_id_from_dir(root: Path, path: Path) -> str | None:
+    try:
+        rel = path.relative_to(root)
+    except ValueError:
+        return None
+    parts = rel.parts
+    if len(parts) == 2:
+        return f"{parts[0]}/{parts[1]}"
+    if len(parts) == 1 and "_" in parts[0]:
+        return parts[0].replace("_", "/", 1)
+    return None
+
+
+def _local_model_entries():
+    entries = []
+    for root in _local_model_roots():
+        if not root.is_dir():
+            continue
+        candidates: list[Path] = []
+        try:
+            for child in root.iterdir():
+                if not child.is_dir():
+                    continue
+                if "_" in child.name:
+                    candidates.append(child)
+                for grandchild in child.iterdir():
+                    if grandchild.is_dir():
+                        candidates.append(grandchild)
+        except OSError:
+            continue
+
+        for path in candidates:
+            repo_id = _local_repo_id_from_dir(root, path)
+            if not repo_id:
+                continue
+            try:
+                size = max(path.stat().st_size, 1)
+                modified = path.stat().st_mtime
+            except OSError:
+                size = 1
+                modified = None
+            entries.append(SimpleNamespace(
+                repo_id=repo_id,
+                size_on_disk=size,
+                last_accessed=modified,
+                nb_files=0,
+                cache_dir=str(path),
+                source="local_dir",
+            ))
+    return entries
+
+
+def _scan_all_cache_dirs():
+    """Scan every visible HF cache root, preserving the active cache first."""
+    from huggingface_hub import scan_cache_dir
+
+    repos = []
+    scanned_dirs: list[str] = []
+    errors: list[str] = []
+    for cache_dir in hf_cache_dirs():
+        try:
+            info = scan_cache_dir(cache_dir=cache_dir)
+        except Exception as e:
+            errors.append(f"{cache_dir}: {e}")
+            continue
+        scanned_dirs.append(cache_dir)
+        for entry in list(getattr(info, "repos", []) or []):
+            repos.append(SimpleNamespace(
+                repo_id=entry.repo_id,
+                size_on_disk=entry.size_on_disk,
+                last_accessed=entry.last_accessed,
+                nb_files=entry.nb_files,
+                cache_dir=cache_dir,
+                source="hf_cache",
+            ))
+    repos.extend(_local_model_entries())
+    return SimpleNamespace(repos=repos, cache_dirs=scanned_dirs, errors=errors)
+
+
+_WEIGHT_INDEX_FILES = (
+    "model.safetensors.index.json",
+    "pytorch_model.bin.index.json",
+)
+
+_WEIGHT_FILE_PATTERNS = (
+    "*.safetensors",
+    "*.bin",
+    "*.gguf",
+    "*.onnx",
+    "*.pt",
+    "*.pth",
+)
+
+
+def _repo_cache_name(repo_id: str) -> str:
+    return f"models--{repo_id.replace('/', '--')}"
+
+
+def _material_file(path: Path) -> bool:
+    """True when a snapshot file resolves to a real, non-empty blob."""
+    try:
+        return path.is_file() and path.stat().st_size > 0 and not path.name.endswith(".incomplete")
+    except OSError:
+        return False
+
+
+def _snapshot_weight_complete(snapshot: Path) -> bool:
+    """Detect partially-downloaded sharded HF snapshots.
+
+    `scan_cache_dir()` includes incomplete blobs in repo size totals. That can
+    make a cancelled xet/LFS download look installed even though
+    `from_pretrained()` will block trying to fetch missing shards. If an index
+    exists, every referenced shard must resolve to a real blob.
+    """
+    for index_name in _WEIGHT_INDEX_FILES:
+        index_path = snapshot / index_name
+        if not _material_file(index_path):
+            continue
+        try:
+            data = json.loads(index_path.read_text(encoding="utf-8"))
+        except Exception:
+            return False
+        shards = {
+            str(name)
+            for name in (data.get("weight_map") or {}).values()
+            if name
+        }
+        if shards:
+            return all(_material_file(snapshot / shard) for shard in shards)
+
+    candidates: list[Path] = []
+    for pattern in _WEIGHT_FILE_PATTERNS:
+        candidates.extend(snapshot.glob(pattern))
+    if candidates:
+        return any(_material_file(path) for path in candidates)
+    return True
+
+
+def _repo_has_complete_snapshot(repo_id: str, cache_dirs: list[str] | None = None) -> bool:
+    checked_any = False
+    for cache_dir in cache_dirs or hf_cache_dirs():
+        repo_root = Path(cache_dir) / _repo_cache_name(repo_id)
+        snapshots_root = repo_root / "snapshots"
+        if not snapshots_root.is_dir():
+            continue
+        checked_any = True
+        candidates: list[Path] = []
+        ref_main = repo_root / "refs" / "main"
+        try:
+            ref = ref_main.read_text(encoding="utf-8").strip()
+        except OSError:
+            ref = ""
+        if ref:
+            candidates.append(snapshots_root / ref)
+        try:
+            candidates.extend(path for path in snapshots_root.iterdir() if path.is_dir())
+        except OSError:
+            continue
+
+        seen: set[Path] = set()
+        for snapshot in candidates:
+            if snapshot in seen or not snapshot.is_dir():
+                continue
+            seen.add(snapshot)
+            if _snapshot_weight_complete(snapshot):
+                return True
+    return not checked_any
+
+
+def _entry_incomplete(entry) -> bool:
+    if getattr(entry, "source", "hf_cache") != "hf_cache":
+        return False
+    cache_dir = getattr(entry, "cache_dir", None)
+    cache_dirs = [cache_dir] if cache_dir else None
+    return not _repo_has_complete_snapshot(entry.repo_id, cache_dirs)
 
 
 def is_cached(repo_id: str) -> bool:
     """Best-effort check: does HF have this repo in its cache on disk?"""
     try:
-        from huggingface_hub import scan_cache_dir
-        info = scan_cache_dir()
+        info = _scan_all_cache_dirs()
         for entry in info.repos:
-            if entry.repo_id == repo_id and entry.size_on_disk > 0:
+            if entry.repo_id == repo_id and entry.size_on_disk > 0 and not _entry_incomplete(entry):
                 return True
         return False
     except Exception as e:
@@ -144,6 +331,24 @@ def is_cached(repo_id: str) -> bool:
 
 _CACHE_TTL = 10.0  # seconds
 _cache: dict[str, tuple[float, object]] = {}
+_SCAN_LOCK = threading.Lock()
+_SCAN_STATUS: dict[str, object] = {
+    "status": "idle",
+    "stage": "idle",
+    "detail": "Waiting to scan model cache",
+    "progress_pct": 0,
+    "cache_dir": hf_cache_dir(),
+    "cache_dirs": hf_cache_dirs(),
+    "current_repo_id": None,
+    "total_models": len(KNOWN_MODELS),
+    "scanned_models": 0,
+    "cached_repos": 0,
+    "installed_models": 0,
+    "started_at": None,
+    "finished_at": None,
+    "elapsed_ms": 0,
+    "error": None,
+}
 
 
 def _cached(key: str, ttl: float = _CACHE_TTL):
@@ -161,9 +366,165 @@ def _set_cache(key: str, value: object) -> None:
 def invalidate_cache() -> None:
     """Called after install/delete to bust the models cache."""
     _cache.clear()
+    _set_scan_status(
+        status="idle",
+        stage="idle",
+        detail="Waiting to scan model cache",
+        progress_pct=0,
+        current_repo_id=None,
+        total_models=len(KNOWN_MODELS),
+        scanned_models=0,
+        cached_repos=0,
+        installed_models=0,
+        started_at=None,
+        finished_at=None,
+        elapsed_ms=0,
+        error=None,
+    )
+
+
+def _set_scan_status(**updates) -> dict:
+    """Update and return a thread-safe snapshot of the model scan state."""
+    with _SCAN_LOCK:
+        _SCAN_STATUS.update(updates)
+        _SCAN_STATUS["cache_dir"] = hf_cache_dir()
+        _SCAN_STATUS["cache_dirs"] = hf_cache_dirs()
+        started = _SCAN_STATUS.get("started_at")
+        finished = _SCAN_STATUS.get("finished_at")
+        if started:
+            end = finished or time.time()
+            _SCAN_STATUS["elapsed_ms"] = max(0, round((end - started) * 1000))
+        return dict(_SCAN_STATUS)
+
+
+def get_model_scan_status() -> dict:
+    """Return current model cache scan progress for polling UI."""
+    return _set_scan_status()
+
+
+def _scan_progress(scanned: int, total: int) -> int:
+    if total <= 0:
+        return 100
+    # Reserve 0-20 for cache walking and 96-100 for finalization.
+    return min(96, 20 + round((scanned / total) * 76))
+
+
+def _repo_snapshot(entry) -> dict:
+    return {
+        "size_on_disk": entry.size_on_disk,
+        "last_accessed": entry.last_accessed,
+        "nb_files": entry.nb_files,
+        "cache_dir": getattr(entry, "cache_dir", None),
+        "source": getattr(entry, "source", "hf_cache"),
+        "incomplete": _entry_incomplete(entry),
+    }
+
+
+def _cached_repos_from_scan(info) -> dict[str, dict]:
+    cached_by_repo: dict[str, dict] = {}
+    repos = list(getattr(info, "repos", []) or [])
+    _set_scan_status(
+        status="scanning",
+        stage="matching_models",
+        detail=f"Matched {len(repos)} cached repos; checking known models",
+        cached_repos=len(repos),
+        progress_pct=20,
+    )
+    for entry in repos:
+        cached = _repo_snapshot(entry)
+        previous = cached_by_repo.get(entry.repo_id)
+        if previous is None or cached["size_on_disk"] > previous["size_on_disk"]:
+            cached_by_repo[entry.repo_id] = cached
+    return cached_by_repo
+
+
+def _related_repos_for_model(model: dict, cached_by_repo: dict[str, dict]) -> list[dict]:
+    related = []
+    for repo_id in model.get("related_repo_ids", []) or []:
+        cached = cached_by_repo.get(repo_id)
+        if cached and cached["size_on_disk"] > 0 and not cached.get("incomplete"):
+            related.append({"repo_id": repo_id, **cached})
+    return related
+
+
+def _build_models_response(
+    scan_info,
+    *,
+    final_status: str = "complete",
+    final_stage: str = "complete",
+    final_detail: str = "Scan complete",
+    error: str | None = None,
+) -> dict:
+    cached_by_repo = _cached_repos_from_scan(scan_info)
+    total_models = len(KNOWN_MODELS)
+    out = []
+    installed_models = 0
+
+    for idx, m in enumerate(KNOWN_MODELS, start=1):
+        repo_id = m["repo_id"]
+        cached = cached_by_repo.get(repo_id)
+        installed = cached is not None and cached["size_on_disk"] > 0 and not cached.get("incomplete")
+        related_repos = _related_repos_for_model(m, cached_by_repo)
+        related_installed = bool(related_repos)
+        install_status = (
+            "installed" if installed
+            else "related_found" if related_installed
+            else "not_installed"
+        )
+        installed_models += 1 if installed else 0
+        _set_scan_status(
+            status="scanning",
+            stage="matching_models",
+            detail=f"Checking {m.get('label') or repo_id}",
+            current_repo_id=repo_id,
+            scanned_models=idx,
+            total_models=total_models,
+            installed_models=installed_models,
+            progress_pct=_scan_progress(idx, total_models),
+        )
+        out.append({
+            **m,
+            "installed": installed,
+            "install_status": install_status,
+            "size_on_disk_bytes": cached["size_on_disk"] if cached else 0,
+            "nb_files": cached["nb_files"] if cached else 0,
+            "cache_dir": cached["cache_dir"] if cached else None,
+            "related_installed": related_installed,
+            "related_repos": related_repos,
+            "supported": _model_supported(m),
+        })
+
+    total_installed = sum(m["size_on_disk_bytes"] for m in out)
+    _set_scan_status(
+        status=final_status,
+        stage=final_stage,
+        detail=final_detail,
+        current_repo_id=None,
+        scanned_models=total_models,
+        total_models=total_models,
+        installed_models=installed_models,
+        progress_pct=100,
+        finished_at=time.time(),
+        error=error,
+    )
+    response = {
+        "models": out,
+        "total_installed_bytes": total_installed,
+        "hf_cache_dir": hf_cache_dir(),
+        "hf_cache_dirs": list(getattr(scan_info, "cache_dirs", []) or hf_cache_dirs()),
+        "platform_tags": _current_platform_tags(),
+        "scan": get_model_scan_status(),
+    }
+    return response
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────
+
+@router.get("/models/scan-status")
+def model_scan_status():
+    """Current progress for the most recent /models cache scan."""
+    return get_model_scan_status()
+
 
 @router.get("/models")
 def list_models():
@@ -176,35 +537,45 @@ def list_models():
     if cached_response is not None:
         return cached_response
 
-    cached_by_repo: dict[str, dict] = {}
     try:
-        from huggingface_hub import scan_cache_dir
-        info = scan_cache_dir()
-        for entry in info.repos:
-            cached_by_repo[entry.repo_id] = {
-                "size_on_disk": entry.size_on_disk,
-                "last_accessed": entry.last_accessed,
-                "nb_files": entry.nb_files,
-            }
+        _set_scan_status(
+            status="scanning",
+            stage="walking_cache",
+            detail=f"Scanning {len(hf_cache_dirs())} model cache locations",
+            progress_pct=8,
+            cache_dir=hf_cache_dir(),
+            cache_dirs=hf_cache_dirs(),
+            current_repo_id=None,
+            total_models=len(KNOWN_MODELS),
+            scanned_models=0,
+            cached_repos=0,
+            installed_models=0,
+            started_at=time.time(),
+            finished_at=None,
+            elapsed_ms=0,
+            error=None,
+        )
+        info = _scan_all_cache_dirs()
+        scan_errors = list(getattr(info, "errors", []) or [])
+        response = _build_models_response(
+            info,
+            final_detail=(
+                "Scan complete"
+                if not scan_errors
+                else f"Scan complete with {len(scan_errors)} cache warning"
+                     f"{'' if len(scan_errors) == 1 else 's'}"
+            ),
+            error="; ".join(scan_errors) if scan_errors else None,
+        )
     except Exception as e:
         logger.warning("scan_cache_dir failed: %s", e)
-
-    out = []
-    for m in KNOWN_MODELS:
-        cached = cached_by_repo.get(m["repo_id"])
-        out.append({
-            **m,
-            "installed": cached is not None and cached["size_on_disk"] > 0,
-            "size_on_disk_bytes": cached["size_on_disk"] if cached else 0,
-            "nb_files": cached["nb_files"] if cached else 0,
-            "supported": _model_supported(m),
-        })
-    response = {
-        "models": out,
-        "total_installed_bytes": sum(m["size_on_disk_bytes"] for m in out),
-        "hf_cache_dir": hf_cache_dir(),
-        "platform_tags": _current_platform_tags(),
-    }
+        response = _build_models_response(
+            type("ScanInfo", (), {"repos": []})(),
+            final_status="error",
+            final_stage="error",
+            final_detail="Scan failed",
+            error=str(e),
+        )
     _set_cache("models", response)
     return response
 
@@ -276,8 +647,7 @@ def recommendations():
     known_by_id = {m["repo_id"]: m for m in KNOWN_MODELS}
     cached_ids: set[str] = set()
     try:
-        from huggingface_hub import scan_cache_dir
-        info = scan_cache_dir()
+        info = _scan_all_cache_dirs()
         cached_ids = {
             entry.repo_id for entry in info.repos if entry.size_on_disk > 0
         }

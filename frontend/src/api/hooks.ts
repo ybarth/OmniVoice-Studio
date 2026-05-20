@@ -17,6 +17,7 @@ export const queryKeys = {
   systemLogs:      (tail?: number) => ['system-logs', tail ?? 300] as const,
   tauriLogs:       (tail?: number) => ['tauri-logs',  tail ?? 300] as const,
   models:          ['models']          as const,
+  modelScanStatus: ['model-scan-status'] as const,
   recommendations: ['recommendations'] as const,
   preflight:       ['preflight']       as const,
   setupStatus:     ['setup-status']    as const,
@@ -92,6 +93,16 @@ export function useModels() {
     queryKey: queryKeys.models,
     queryFn: setupApi.listModels,
     staleTime: 30_000,
+  });
+}
+
+export function useModelScanStatus(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.modelScanStatus,
+    queryFn: setupApi.modelScanStatus,
+    refetchInterval: enabled ? 500 : false,
+    refetchIntervalInBackground: true,
+    enabled,
   });
 }
 

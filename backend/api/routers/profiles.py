@@ -11,6 +11,7 @@ from core.db import db_conn
 from core.config import VOICES_DIR, OUTPUTS_DIR
 from core import event_bus
 from core.personalities import get_personalities
+from core.text_fields import clean_instruct_text
 
 router = APIRouter()
 
@@ -44,6 +45,7 @@ async def create_profile(
     seed: Optional[int] = Form(None),
     personality: str = Form(""),
 ):
+    instruct = clean_instruct_text(instruct) or ""
     profile_id = str(uuid.uuid4())[:8]
     ext = os.path.splitext(ref_audio.filename or ".wav")[1]
     audio_filename = f"{profile_id}{ext}"
@@ -58,13 +60,14 @@ async def create_profile(
                 "INSERT INTO voice_profiles (id, name, ref_audio_path, ref_text, instruct, language, seed, personality, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (profile_id, name, audio_filename, ref_text, instruct, language, seed, personality, time.time())
             )
+            profile = conn.execute("SELECT * FROM voice_profiles WHERE id = ?", (profile_id,)).fetchone()
     except Exception:
         # Clean up orphaned audio file if DB insert fails
         if os.path.exists(audio_path):
             os.remove(audio_path)
         raise
     event_bus.emit("profiles", {"action": "created", "id": profile_id})
-    return {"id": profile_id, "name": name}
+    return dict(profile)
 
 @router.get("/profiles/{profile_id}")
 def get_profile(profile_id: str):
@@ -93,7 +96,10 @@ def update_profile(profile_id: str, patch: ProfileUpdate):
         if col == "name" and not val.strip():
             raise HTTPException(status_code=400, detail="A voice profile needs a name.")
         fields.append(f"{col} = ?")
-        params.append(val.strip() if col in ("name", "language") else val)
+        if col == "instruct":
+            params.append(clean_instruct_text(val) or "")
+        else:
+            params.append(val.strip() if col in ("name", "language") else val)
     if not fields:
         raise HTTPException(
             status_code=400,

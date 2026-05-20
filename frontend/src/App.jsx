@@ -56,7 +56,8 @@ import { flushMemory as apiFlushMemory } from './api/system';
 import { saveProject as apiSaveProject, loadProject as apiLoadProject, deleteProject as apiDeleteProject } from './api/projects';
 import { exportAction, exportReveal, exportRecord } from './api/exports';
 
-import { isTauri, doubleClickMaximize, fileToMediaUrl, playBlobAudio, playPing } from './utils/media';
+import { isTauri, canUseTauriNativeApi, doubleClickMaximize, fileToMediaUrl, playBlobAudio, playPing } from './utils/media';
+import { historyAudioDownloadUrl, safeDownloadName } from './utils/downloads';
 
 function App() {
   // First-run bootstrap: Rust spawns uv sync in a background thread and
@@ -184,6 +185,7 @@ function App() {
     selectedProfile, setSelectedProfile,
     showSaveProfile, setShowSaveProfile,
     profileName, setProfileName,
+    isSavingProfile,
     previewLoading, segmentPreviewLoading,
     isVoicePreviewOpen, setIsVoicePreviewOpen,
     voicePreviewProfileId, setVoicePreviewProfileId,
@@ -193,16 +195,38 @@ function App() {
     handleSaveHistoryAsProfile, handleLockProfile, handleUnlockProfile,
   } = useProfiles({ loadHistory, loadProfiles });
 
+  const selectedProfileRecord = selectedProfile
+    ? profiles.find(profile => profile.id === selectedProfile)
+    : null;
+
+  useEffect(() => {
+    if (selectedProfile && profiles.length > 0 && !selectedProfileRecord) {
+      setSelectedProfile(null);
+    }
+  }, [selectedProfile, selectedProfileRecord, profiles, setSelectedProfile]);
+
   const {
     refAudio, setRefAudio,
     pendingTrimFile, setPendingTrimFile,
-    isGenerating, generationTime,
+    isGenerating, generationTime, synthesisProgress,
+    lastPromptTranslation,
     textAreaRef,
     ingestRefAudio, insertTag, applyPreset,
     handleGenerate,
   } = useTTS({ selectedProfile, setSelectedProfile, loadHistory });
 
-  const handleSaveProfile = () => _handleSaveProfile(refAudio, refText, instruct, language);
+  const handleIngestRefAudio = useCallback(async (file) => {
+    await ingestRefAudio(file);
+    if (file) {
+      setShowSaveProfile(true);
+      setProfileName(prev => prev || `Voice ${new Date().toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' })}`);
+    }
+  }, [ingestRefAudio, setShowSaveProfile, setProfileName]);
+
+  const handleSaveProfile = useCallback(async () => {
+    const saved = await _handleSaveProfile(refAudio, refText, instruct, language);
+    if (saved) setRefAudio(null);
+  }, [_handleSaveProfile, refAudio, refText, instruct, language, setRefAudio]);
 
   // A/B Voice Comparison State
   const [isCompareModalOpen, setIsCompareModalOpen] = useState(false);
@@ -218,7 +242,7 @@ function App() {
   const {
     isRecording, isCleaning, recordingTime,
     startRecording, stopRecording,
-  } = useRecording(ingestRefAudio);
+  } = useRecording(handleIngestRefAudio);
 
   // ═══ DUB STATE ═══
   const dubJobId           = useAppStore(s => s.dubJobId);
@@ -496,14 +520,19 @@ function App() {
 
   const handleNativeExport = async (e, sourceIdentifier, fallbackName, mode) => {
     if (e) { e.preventDefault(); e.stopPropagation(); }
+    const finalName = safeDownloadName(sourceIdentifier, fallbackName);
+    if (!isTauri || !canUseTauriNativeApi()) {
+      await triggerDownload(historyAudioDownloadUrl(sourceIdentifier), finalName);
+      return;
+    }
     try {
       const { save } = await import('@tauri-apps/plugin-dialog');
-      const ext = fallbackName.includes('.') ? fallbackName.split('.').pop() : 'wav';
-      const destPath = await save({ defaultPath: fallbackName, filters: [{ name: 'Media', extensions: [ext] }] });
+      const ext = finalName.includes('.') ? finalName.split('.').pop() : 'wav';
+      const destPath = await save({ defaultPath: finalName, filters: [{ name: 'Media', extensions: [ext] }] });
       if (!destPath) return; // User cancelled
 
       await exportAction({ source_filename: sourceIdentifier, destination_path: destPath, mode });
-      toast.success(`Exported: ${fallbackName}`);
+      toast.success(`Exported: ${finalName}`);
       loadExportHistory();
     } catch (err) {
       console.error(err);
@@ -532,7 +561,7 @@ function App() {
 
     // In Tauri, WebKit silently drops blob downloads. Use native save dialog
     // + server-side copy so the file actually lands on disk at a known path.
-    if (isTauri) {
+    if (isTauri && canUseTauriNativeApi()) {
       try {
         const { save } = await import('@tauri-apps/plugin-dialog');
         const destPath = await save({
@@ -1020,16 +1049,18 @@ function App() {
               instruct={instruct} setInstruct={setInstruct}
               profileName={profileName} setProfileName={setProfileName}
               showSaveProfile={showSaveProfile} setShowSaveProfile={setShowSaveProfile}
+              isSavingProfile={isSavingProfile}
               isRecording={isRecording} isCleaning={isCleaning} recordingTime={recordingTime}
               vdStates={vdStates} setVdStates={setVdStates}
-              isGenerating={isGenerating} generationTime={generationTime}
+              isGenerating={isGenerating} generationTime={generationTime} synthesisProgress={synthesisProgress}
+              lastPromptTranslation={lastPromptTranslation}
               applyPreset={applyPreset} insertTag={insertTag}
               handleSelectProfile={handleSelectProfile}
               handleDeleteProfile={handleDeleteProfile}
               handleSaveProfile={handleSaveProfile}
               handleGenerate={handleGenerate}
               startRecording={startRecording} stopRecording={stopRecording}
-              ingestRefAudio={ingestRefAudio}
+              ingestRefAudio={handleIngestRefAudio}
             />
           </Suspense>
           </ErrorBoundary>

@@ -9,7 +9,7 @@
 # Fields:
 #   repo_id    (required) — HuggingFace repository ID
 #   label      (required) — Human-readable display name
-#   role       (required) — TTS | ASR | Diarisation
+#   role       (required) — TTS | ASR | Diarisation | Translation
 #   size_gb    (required) — Approximate download size in GiB
 #   required   (optional) — true if the app needs this model to function
 #   platforms  (optional) — restrict to specific OS+arch tags (e.g. darwin-arm64, cuda)
@@ -124,12 +124,29 @@ models:
     size_gb: 0.8
     note: "Needs an HF_TOKEN with license accepted."
 
+  # ── Translation ───────────────────────────────────────────────────────
+
+  - repo_id: "tencent/HY-MT1.5-1.8B"
+    label: "HY-MT1.5 1.8B (local translation, Cantonese/yue)"
+    role: Translation
+    size_gb: 4.1
+    note: "Practical local translation engine. Supports Cantonese/yue; good first pick for English → Cantonese prompts."
+
+  - repo_id: "tencent/HY-MT1.5-7B"
+    label: "HY-MT1.5 7B (local translation, higher quality)"
+    role: Translation
+    size_gb: 16.1
+    note: "Higher-quality local translation engine with Cantonese/yue support. Heavier download and memory use than 1.8B."
+
   # ── Optional TTS ──────────────────────────────────────────────────────
 
   - repo_id: "OpenMOSS-Team/MOSS-TTS-Nano-100M"
     label: "MOSS-TTS-Nano 100M (20 langs, CPU-realtime)"
     role: TTS
     size_gb: 0.4
+    related_repo_ids:
+      - "OpenMOSS-Team/MOSS-Audio-4B-Instruct"
+      - "OpenMOSS-Team/MOSS-TTS-Nano"
 
   - repo_id: "KittenML/kitten-tts-mini-0.8"
     label: "KittenTTS (English, 8 preset voices, CPU realtime)"
@@ -144,6 +161,8 @@ models:
     size_gb: 0.15
     note: "Apple Silicon only — via mlx-audio backend."
     platforms: [darwin-arm64]
+    related_repo_ids:
+      - "hexgrad/Kokoro-82M"
 
   - repo_id: "mlx-community/csm-1b-8bit"
     label: "CSM 1B (voice cloning, mlx-audio)"
@@ -158,6 +177,9 @@ models:
     size_gb: 1.4
     note: "Apple Silicon only — via mlx-audio backend."
     platforms: [darwin-arm64]
+    related_repo_ids:
+      - "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"
+      - "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
 
   - repo_id: "mlx-community/Dia-1.6B"
     label: "Dia 1.6B (expressive, mlx-audio)"

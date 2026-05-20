@@ -12,6 +12,8 @@ import torch
 import shutil
 
 from core.config import OUTPUTS_DIR, DATA_DIR, CRASH_LOG_PATH, LOG_PATH, IDLE_TIMEOUT_SECONDS
+from core.env_store import set_persistent_env_var
+from core.storage import storage_status
 from services.model_manager import get_model_status, get_best_device
 from services.ffmpeg_utils import find_ffmpeg, run_ffmpeg
 
@@ -47,6 +49,73 @@ def _has_hf_token() -> bool:
         return bool(get_token())
     except Exception:
         return False
+
+
+CREDENTIAL_STATUS_FIELDS = [
+    {
+        "key": "HF_TOKEN",
+        "label": "HuggingFace Token",
+        "category": "model-access",
+        "secret": True,
+        "description": "Model downloads and gated Hugging Face repos.",
+    },
+    {
+        "key": "TRANSLATE_API_KEY",
+        "label": "OpenAI-compatible / Generic Translation Key",
+        "category": "translation",
+        "secret": True,
+        "description": "Used by OpenAI-compatible translation and as a fallback for paid translators.",
+    },
+    {
+        "key": "OPENAI_API_KEY",
+        "label": "OpenAI API Key",
+        "category": "translation",
+        "secret": True,
+        "description": "Fallback key for real OpenAI when TRANSLATE_API_KEY is not set.",
+    },
+    {
+        "key": "DEEPL_API_KEY",
+        "label": "DeepL API Key",
+        "category": "translation",
+        "secret": True,
+        "description": "Used by the DeepL translation engine.",
+    },
+    {
+        "key": "MICROSOFT_API_KEY",
+        "label": "Microsoft Translator Key",
+        "category": "translation",
+        "secret": True,
+        "description": "Used by the Microsoft Translator engine.",
+    },
+    {
+        "key": "TRANSLATE_BASE_URL",
+        "label": "OpenAI-compatible Base URL",
+        "category": "translation-config",
+        "secret": False,
+        "description": "Optional endpoint for OpenAI-compatible providers, Ollama, or LM Studio.",
+    },
+    {
+        "key": "TRANSLATE_MODEL",
+        "label": "Translation LLM Model",
+        "category": "translation-config",
+        "secret": False,
+        "description": "Model name for OpenAI-compatible translation.",
+    },
+]
+
+
+def credential_status() -> list[dict]:
+    """Return credential presence without exposing secret values."""
+    rows = []
+    for field in CREDENTIAL_STATUS_FIELDS:
+        key = field["key"]
+        configured = _has_hf_token() if key == "HF_TOKEN" else bool(os.environ.get(key))
+        rows.append({
+            **field,
+            "configured": configured,
+            "source": "configured" if configured else None,
+        })
+    return rows
 
 @router.get("/model/status", response_model=ModelStatusResponse)
 def model_status():
@@ -148,15 +217,21 @@ def system_info():
     and a 500 here blocks the entire UI from rendering system details.
     """
     try:
+        storage = storage_status()
         return {
             "data_dir": DATA_DIR,
             "outputs_dir": OUTPUTS_DIR,
+            "storage_root": storage.get("storage_root"),
+            "storage_volume": storage.get("storage_volume"),
+            "storage_external": storage.get("storage_external", False),
+            "hf_cache_dir": storage.get("hf_cache_dir"),
             "crash_log_path": CRASH_LOG_PATH,
             "idle_timeout_seconds": IDLE_TIMEOUT_SECONDS,
             "model_checkpoint": os.environ.get("OMNIVOICE_MODEL", "k2-fsa/OmniVoice"),
             "asr_model": os.environ.get("ASR_MODEL", "Systran/faster-whisper-large-v3"),
             "translate_provider": os.environ.get("TRANSLATE_PROVIDER", "google"),
             "has_hf_token": _has_hf_token(),
+            "credentials": credential_status(),
             "device": get_best_device(),
             "python": sys.version.split()[0],
             "platform": sys.platform,
@@ -166,12 +241,17 @@ def system_info():
         return {
             "data_dir": DATA_DIR,
             "outputs_dir": OUTPUTS_DIR,
+            "storage_root": None,
+            "storage_volume": None,
+            "storage_external": False,
+            "hf_cache_dir": "",
             "crash_log_path": str(CRASH_LOG_PATH),
             "idle_timeout_seconds": IDLE_TIMEOUT_SECONDS,
             "model_checkpoint": "unknown",
             "asr_model": "unknown",
             "translate_provider": "unknown",
             "has_hf_token": False,
+            "credentials": [],
             "device": "cpu",
             "python": sys.version.split()[0],
             "platform": sys.platform,
@@ -536,19 +616,17 @@ def system_notifications():
 async def set_env_var(body: dict):
     """Set an environment variable at runtime.
 
-    Currently supports:
-      - HF_TOKEN: HuggingFace access token
-      - TRANSLATE_API_KEY: Translation API key
+    Currently supports model and translation credentials/config only.
 
-    The value is set on os.environ for the running process.
-    For persistence across restarts, users should set it in their shell profile.
+    The value is set on os.environ for the running process and persisted to
+    OmniVoice's per-user env file for future app launches.
 
     The loopback-origin gate that previously lived inline here is now applied
     at the router level via `dependencies=[Depends(require_loopback)]` on
     `router` — see the top of this file. Every route on this router is
     gated, including this one. The 403 body and behavior are unchanged.
     """
-    ALLOWED_KEYS = {"HF_TOKEN", "TRANSLATE_API_KEY"}
+    ALLOWED_KEYS = {field["key"] for field in CREDENTIAL_STATUS_FIELDS}
     key = body.get("key", "")
     value = body.get("value", "")
 
@@ -558,11 +636,10 @@ async def set_env_var(body: dict):
             detail=f"Key '{key}' is not allowed. Allowed: {', '.join(sorted(ALLOWED_KEYS))}",
         )
 
+    set_persistent_env_var(key, value)
     if value:
-        os.environ[key] = value
         logger.info("Set environment variable: %s (length=%d)", key, len(value))
     else:
-        os.environ.pop(key, None)
         logger.info("Cleared environment variable: %s", key)
 
     return {"key": key, "set": bool(value)}

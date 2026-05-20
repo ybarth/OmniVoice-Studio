@@ -150,6 +150,68 @@
 .models-toolbar__sep          { color: var(--chrome-fg-dim); }
 .models-toolbar__cache code   { color: var(--chrome-fg); font-family: var(--chrome-font-mono); font-size: var(--text-xs); }
 
+.models-scan {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--chrome-bg-elev) 82%, transparent);
+}
+
+.models-scan.is-active {
+  border-color: color-mix(in srgb, var(--color-brand) 46%, var(--chrome-border));
+}
+
+.models-scan__top,
+.models-scan__meta,
+.models-scan__repo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.models-scan__title {
+  color: var(--chrome-fg);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.models-scan__pct {
+  color: var(--chrome-fg-dim);
+  font-family: var(--chrome-font-mono);
+  font-size: var(--text-xs);
+  flex: 0 0 auto;
+}
+
+.models-scan__meta,
+.models-scan__repo {
+  color: var(--chrome-fg-dim);
+  font-size: var(--text-xs);
+}
+
+.models-scan__meta code,
+.models-scan__repo code {
+  color: var(--chrome-fg);
+  font-family: var(--chrome-font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.models-scan__meta code { max-width: min(52vw, 520px); }
+.models-scan__repo code { max-width: min(48vw, 420px); }
+
+.models-scan__error {
+  color: var(--color-danger);
+  font-size: var(--text-xs);
+}
+
 .models-roletabs { margin: 4px 0 6px; }
 
 /* ── Compact recommendation banner ───────────────────────────────── */
@@ -403,6 +465,74 @@
 }
 
 /* ── Credentials tab ────────────────────────────────────────── */
+.settings-credential-status {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-4) 0 var(--space-6);
+  padding: var(--space-4);
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--chrome-bg-1, #181818);
+}
+
+.settings-credential-status__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.settings-credential-status__title {
+  color: var(--chrome-fg);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.settings-credential-status__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-2);
+}
+
+.settings-credential-status__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: var(--space-3);
+  padding: 8px 10px;
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--chrome-bg-2, #1d1d1d);
+}
+
+.settings-credential-status__meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  color: var(--chrome-fg);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.settings-credential-status__meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-credential-status__meta code {
+  overflow: hidden;
+  color: var(--chrome-fg-dim);
+  font-family: var(--chrome-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .settings-credential {
   margin-bottom: var(--space-5);
   padding-bottom: var(--space-5);
@@ -454,3 +584,21 @@
   text-decoration: none;
 }
 .settings-credential__help a:hover { text-decoration: underline; }
+
+@media (max-width: 580px) {
+  .settings-credential-status {
+    padding: var(--space-3);
+  }
+
+  .settings-credential-status__head,
+  .settings-credential-status__item,
+  .settings-credential__row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-credential__input {
+    max-width: none;
+    width: 100%;
+  }
+}

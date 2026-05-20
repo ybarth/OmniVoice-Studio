@@ -14,6 +14,7 @@ export default function useProfiles({ loadHistory, loadProfiles }) {
   const [selectedProfile, setSelectedProfile] = useState(null);
   const [showSaveProfile, setShowSaveProfile] = useState(false);
   const [profileName, setProfileName] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(null);
   const [segmentPreviewLoading, setSegmentPreviewLoading] = useState(null);
 
@@ -36,21 +37,35 @@ export default function useProfiles({ loadHistory, loadProfiles }) {
 
   const handleSaveProfile = useCallback(async (refAudio, refText, instruct, language) => {
     if (!profileName.trim() || !refAudio) return toast.error("Need a name and reference audio");
-    const formData = new FormData();
-    formData.append("name", profileName);
-    const arrBuf = await refAudio.arrayBuffer();
-    const safeBlob = new Blob([arrBuf], { type: refAudio.type });
-    formData.append("ref_audio", safeBlob, refAudio.name || "profile.wav");
-    formData.append("ref_text", refText);
-    formData.append("instruct", instruct);
-    formData.append("language", language);
+    if (!refText.trim()) return toast.error("Add what the reference sample says in Reference Transcript");
+    setIsSavingProfile(true);
+    const toastId = toast.loading(`Saving ${profileName.trim()}...`);
     try {
-      await createProfile(formData);
+      const formData = new FormData();
+      formData.append("name", profileName.trim());
+      const arrBuf = await refAudio.arrayBuffer();
+      const safeBlob = new Blob([arrBuf], { type: refAudio.type });
+      formData.append("ref_audio", safeBlob, refAudio.name || "profile.wav");
+      formData.append("ref_text", refText.trim());
+      formData.append("instruct", instruct);
+      formData.append("language", language);
+      const profile = await createProfile(formData);
       setShowSaveProfile(false);
       setProfileName('');
+      setSelectedProfile(profile.id);
+      setRefText(profile.ref_text || '');
+      setInstruct(profile.instruct || '');
+      if (profile.language && profile.language !== 'Auto') setLanguage(profile.language);
       await loadProfiles();
-    } catch (e) { toast.error(e.message); }
-  }, [profileName, loadProfiles]);
+      toast.success(`Saved voice profile: ${profile.name}`, { id: toastId });
+      return profile;
+    } catch (e) {
+      toast.error(e.message || 'Failed to save voice profile', { id: toastId });
+      return null;
+    } finally {
+      setIsSavingProfile(false);
+    }
+  }, [profileName, loadProfiles, setRefText, setInstruct, setLanguage]);
 
   const handleDeleteProfile = useCallback(async (id) => {
     if (!(await askConfirm('Delete this voice profile?'))) return;
@@ -200,6 +215,7 @@ export default function useProfiles({ loadHistory, loadProfiles }) {
     selectedProfile, setSelectedProfile,
     showSaveProfile, setShowSaveProfile,
     profileName, setProfileName,
+    isSavingProfile,
     previewLoading, segmentPreviewLoading,
     isVoicePreviewOpen, setIsVoicePreviewOpen,
     voicePreviewProfileId, setVoicePreviewProfileId,

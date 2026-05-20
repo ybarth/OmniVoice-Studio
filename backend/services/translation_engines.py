@@ -20,6 +20,7 @@ import logging
 import os
 import shutil
 import sys
+import time
 
 logger = logging.getLogger("omnivoice.translation_engines")
 
@@ -46,6 +47,36 @@ REGISTRY: dict[str, dict] = {
         "needs_key": False,
         "builtin": True,
         "notes": "Meta's 200-language NMT model. Large download (~2.4GB), best offline quality.",
+    },
+    "hymt-1.8b": {
+        "id": "hymt-1.8b",
+        "display_name": "HY-MT1.5 1.8B (Local Cantonese)",
+        "pip_package": None,
+        "probe_module": "transformers",
+        "category": "offline",
+        "needs_key": False,
+        "builtin": True,
+        "model_repo_id": "tencent/HY-MT1.5-1.8B",
+        "model_size_gb": 4.1,
+        "notes": (
+            "Tencent's compact multilingual translation model with explicit "
+            "Cantonese/yue support. Download it from Models before first use."
+        ),
+    },
+    "hymt-7b": {
+        "id": "hymt-7b",
+        "display_name": "HY-MT1.5 7B (Local, Higher Quality)",
+        "pip_package": None,
+        "probe_module": "transformers",
+        "category": "offline",
+        "needs_key": False,
+        "builtin": True,
+        "model_repo_id": "tencent/HY-MT1.5-7B",
+        "model_size_gb": 16.1,
+        "notes": (
+            "Higher-quality HY-MT1.5 translation model with Cantonese/yue "
+            "support. Heavier download and memory footprint than 1.8B."
+        ),
     },
     "google": {
         "id": "google",
@@ -85,18 +116,77 @@ REGISTRY: dict[str, dict] = {
     },
     "openai": {
         "id": "openai",
-        "display_name": "LLM (OpenAI-compatible)",
-        "pip_package": "openai",
-        "probe_module": "openai",
+        "display_name": "OpenAI (API)",
+        "pip_package": None,
+        "probe_module": None,
         "category": "llm",
         "needs_key": True,
         "notes": (
-            "Any OpenAI-compatible endpoint: GPT-4/5 (OpenAI), Claude (via OpenRouter), "
-            "Gemini (OpenAI-compat mode), DeepSeek, Qwen, Ollama, LM Studio. "
-            "Set TRANSLATE_BASE_URL + TRANSLATE_API_KEY + TRANSLATE_MODEL."
+            "OpenAI chat-completions translation. Set OPENAI_API_KEY or "
+            "TRANSLATE_API_KEY; optionally set TRANSLATE_MODEL."
+        ),
+    },
+    "openai-compatible": {
+        "id": "openai-compatible",
+        "display_name": "OpenAI-compatible LLM",
+        "pip_package": None,
+        "probe_module": None,
+        "category": "llm",
+        "needs_key": True,
+        "notes": (
+            "Any OpenAI-compatible endpoint: OpenRouter, Gemini compatibility "
+            "mode, DeepSeek, Qwen, Ollama, or LM Studio. Set TRANSLATE_BASE_URL, "
+            "TRANSLATE_API_KEY, and TRANSLATE_MODEL."
         ),
     },
 }
+
+_RUNTIME_STATUS: dict[str, dict] = {}
+_RUNTIME_STALE_SECONDS = 10 * 60
+_RUNNING_STATUSES = {"loading", "generating"}
+
+
+def set_runtime_status(
+    engine_id: str,
+    status: str,
+    detail: str = "",
+    progress_pct: int | None = None,
+):
+    _RUNTIME_STATUS[engine_id] = {
+        "status": status,
+        "detail": detail,
+        "progress_pct": progress_pct,
+        "updated_at": time.time(),
+    }
+
+
+def get_runtime_status(engine_id: str) -> dict:
+    status = _RUNTIME_STATUS.get(engine_id)
+    if status:
+        updated_at = status.get("updated_at")
+        if (
+            status.get("status") in _RUNNING_STATUSES
+            and updated_at
+            and time.time() - float(updated_at) > _RUNTIME_STALE_SECONDS
+        ):
+            age = round(time.time() - float(updated_at))
+            return {
+                **status,
+                "status": "error",
+                "detail": (
+                    f"Previous translation attempt stalled after {age}s"
+                    + (f" while {status.get('detail')}" if status.get("detail") else "")
+                ),
+                "progress_pct": None,
+                "stale": True,
+            }
+        return status
+    return {
+        "status": "idle",
+        "detail": "",
+        "progress_pct": None,
+        "updated_at": None,
+    }
 
 
 def is_frozen() -> bool:
@@ -119,15 +209,51 @@ def _probe(entry: dict) -> tuple[bool, str]:
         return False, f"import {mod!r} failed: {e}"
 
 
+def is_model_installed(engine_id: str) -> bool:
+    entry = REGISTRY.get(engine_id)
+    repo_id = entry.get("model_repo_id") if entry else None
+    if not repo_id:
+        return True
+    try:
+        from api.routers.setup.models import is_cached
+        return bool(is_cached(repo_id))
+    except Exception as e:
+        logger.debug("model cache probe failed for %s: %s", repo_id, e)
+        return False
+
+
+def _availability(entry: dict) -> dict:
+    dependency_installed, dep_reason = _probe(entry)
+    model_repo_id = entry.get("model_repo_id")
+    model_installed = is_model_installed(entry["id"]) if model_repo_id else None
+    installed = dependency_installed and (model_installed is not False)
+    if not dependency_installed:
+        reason = dep_reason
+    elif model_installed is False:
+        reason = f"Model {model_repo_id} is not installed. Download it from Models first."
+    else:
+        reason = dep_reason
+    runtime = get_runtime_status(entry["id"])
+    return {
+        "installed": installed,
+        "dependency_installed": dependency_installed,
+        "model_installed": model_installed,
+        "availability_reason": reason,
+        "runtime_status": runtime["status"],
+        "runtime_detail": runtime["detail"],
+        "runtime_progress_pct": runtime["progress_pct"],
+        "running": runtime["status"] in {"loading", "generating", "ready"},
+        "last_runtime_update": runtime["updated_at"],
+    }
+
+
 def list_engines() -> list[dict]:
     """Return a UI-ready list with per-engine availability stamped in."""
     out = []
     for e in REGISTRY.values():
-        installed, reason = _probe(e)
         out.append({
             **e,
-            "installed": installed,
-            "availability_reason": reason,
+            **_availability(e),
         })
     return out
 
@@ -140,8 +266,7 @@ def is_installed(engine_id: str) -> bool:
     entry = REGISTRY.get(engine_id)
     if not entry:
         return False
-    ok, _ = _probe(entry)
-    return ok
+    return bool(_availability(entry)["installed"])
 
 
 def _in_virtualenv() -> bool:

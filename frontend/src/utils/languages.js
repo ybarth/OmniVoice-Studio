@@ -3,7 +3,7 @@ export const LANG_CODES = [
   { code: 'ar', label: 'Arabic' }, { code: 'hy', label: 'Armenian' }, { code: 'az', label: 'Azerbaijani' },
   { code: 'eu', label: 'Basque' }, { code: 'be', label: 'Belarusian' }, { code: 'bn', label: 'Bengali' },
   { code: 'bs', label: 'Bosnian' }, { code: 'bg', label: 'Bulgarian' }, { code: 'my', label: 'Burmese' },
-  { code: 'ca', label: 'Catalan' }, { code: 'cmn-Hans', label: 'Chinese (Simplified)' }, { code: 'cmn-Hant', label: 'Chinese (Traditional)' },
+  { code: 'ca', label: 'Catalan' }, { code: 'yue', label: 'Cantonese' }, { code: 'cmn-Hans', label: 'Chinese (Simplified)' }, { code: 'cmn-Hant', label: 'Chinese (Traditional)' },
   { code: 'hr', label: 'Croatian' }, { code: 'cs', label: 'Czech' }, { code: 'da', label: 'Danish' },
   { code: 'nl', label: 'Dutch' }, { code: 'en', label: 'English' }, { code: 'et', label: 'Estonian' },
   { code: 'fi', label: 'Finnish' }, { code: 'fr', label: 'French' }, { code: 'gl', label: 'Galician' },

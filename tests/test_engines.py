@@ -3,7 +3,7 @@ import os
 os.environ.setdefault("OMNIVOICE_DISABLE_FILE_LOG", "1")
 
 import pytest
-from services import tts_backend, asr_backend, llm_backend
+from services import tts_backend, asr_backend, llm_backend, translation_engines
 
 
 # ── TTS ─────────────────────────────────────────────────────────────────────
@@ -131,3 +131,58 @@ def test_llm_auto_selects_openai_compat_when_configured(monkeypatch):
     except ImportError:
         pytest.skip("openai package not available in this environment")
     assert llm_backend.active_backend_id() == "openai-compat"
+
+
+# ── Translation ─────────────────────────────────────────────────────────────
+
+
+def test_translation_registry_includes_hymt_and_openai():
+    rows = translation_engines.list_engines()
+    by_id = {row["id"]: row for row in rows}
+
+    assert by_id["hymt-1.8b"]["model_repo_id"] == "tencent/HY-MT1.5-1.8B"
+    assert by_id["hymt-7b"]["model_repo_id"] == "tencent/HY-MT1.5-7B"
+    assert by_id["openai"]["display_name"] == "OpenAI (API)"
+    assert by_id["openai"]["needs_key"] is True
+    assert by_id["openai-compatible"]["needs_key"] is True
+
+
+def test_hymt_availability_requires_actual_model_cache(monkeypatch):
+    monkeypatch.setattr(translation_engines, "is_model_installed", lambda _engine_id: False)
+
+    rows = translation_engines.list_engines()
+    by_id = {row["id"]: row for row in rows}
+
+    assert by_id["hymt-1.8b"]["dependency_installed"] is True
+    assert by_id["hymt-1.8b"]["model_installed"] is False
+    assert by_id["hymt-1.8b"]["installed"] is False
+    assert "Download it from Models" in by_id["hymt-1.8b"]["availability_reason"]
+
+
+def test_translation_runtime_stale_loading_reports_error(monkeypatch):
+    monkeypatch.setattr(translation_engines, "_RUNTIME_STALE_SECONDS", 10)
+    translation_engines.set_runtime_status("hymt-7b", "loading", "Loading tencent/HY-MT1.5-7B")
+    translation_engines._RUNTIME_STATUS["hymt-7b"]["updated_at"] = 100.0
+    monkeypatch.setattr(translation_engines.time, "time", lambda: 111.0)
+
+    status = translation_engines.get_runtime_status("hymt-7b")
+
+    assert status["status"] == "error"
+    assert "stalled" in status["detail"]
+
+
+def test_engines_list_includes_translation_family(monkeypatch):
+    from fastapi.testclient import TestClient
+    from main import app
+
+    monkeypatch.setattr(translation_engines, "is_model_installed", lambda _engine_id: False)
+    client = TestClient(app)
+    res = client.get("/engines")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert "translation" in body
+    engines = {row["id"]: row for row in body["translation"]["backends"]}
+    assert "hymt-1.8b" in engines
+    assert "openai" in engines
+    assert engines["hymt-1.8b"]["model_installed"] is False

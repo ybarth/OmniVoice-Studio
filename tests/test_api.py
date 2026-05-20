@@ -600,6 +600,82 @@ def test_set_env_allows_loopback():
             os.environ["HF_TOKEN"] = original
 
 
+def test_set_env_persists_hf_token_for_restarts(monkeypatch, tmp_path):
+    """Saving HF_TOKEN through the UI must survive backend reloads and also
+    write the token where Hugging Face tooling expects to find it."""
+    from fastapi.testclient import TestClient
+    from main import app
+
+    env_path = tmp_path / "omnivoice-env"
+    hf_home = tmp_path / "hf-home"
+    monkeypatch.setenv("OMNIVOICE_USER_ENV_PATH", str(env_path))
+    monkeypatch.setenv("HF_HOME", str(hf_home))
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+
+    loopback_client = TestClient(app, client=("127.0.0.1", 50000))
+    res = loopback_client.post(
+        "/system/set-env",
+        json={"key": "HF_TOKEN", "value": "hf_persist_ok"},
+    )
+
+    assert res.status_code == 200
+    assert os.environ.get("HF_TOKEN") == "hf_persist_ok"
+    assert 'HF_TOKEN="hf_persist_ok"' in env_path.read_text()
+    assert (hf_home / "token").read_text().strip() == "hf_persist_ok"
+    info = loopback_client.get("/system/info").json()
+    assert info["has_hf_token"] is True
+    statuses = {row["key"]: row for row in info["credentials"]}
+    assert statuses["HF_TOKEN"]["configured"] is True
+    assert "hf_persist_ok" not in str(info)
+
+
+def test_set_env_allows_translation_provider_credentials():
+    """Translation provider keys and OpenAI-compatible config should be settable
+    from the local Settings page, not only the legacy generic key."""
+    from fastapi.testclient import TestClient
+    from main import app
+
+    loopback_client = TestClient(app, client=("127.0.0.1", 50000))
+    original = os.environ.get("DEEPL_API_KEY")
+    os.environ.pop("DEEPL_API_KEY", None)
+    try:
+        res = loopback_client.post(
+            "/system/set-env",
+            json={"key": "DEEPL_API_KEY", "value": "deepl_loopback_ok"},
+        )
+        assert res.status_code == 200
+        assert res.json() == {"key": "DEEPL_API_KEY", "set": True}
+        assert os.environ.get("DEEPL_API_KEY") == "deepl_loopback_ok"
+    finally:
+        if original is None:
+            os.environ.pop("DEEPL_API_KEY", None)
+        else:
+            os.environ["DEEPL_API_KEY"] = original
+
+
+def test_system_info_reports_credential_status_without_values(monkeypatch):
+    """Settings needs set/missing status for translation credentials, but the
+    API must never echo the secret value back to the browser."""
+    from fastapi.testclient import TestClient
+    from main import app
+
+    monkeypatch.setenv("TRANSLATE_API_KEY", "generic_secret")
+    monkeypatch.setenv("DEEPL_API_KEY", "deepl_secret")
+    monkeypatch.delenv("MICROSOFT_API_KEY", raising=False)
+
+    loopback_client = TestClient(app, client=("127.0.0.1", 50000))
+    res = loopback_client.get("/system/info")
+
+    assert res.status_code == 200
+    body = res.json()
+    statuses = {row["key"]: row for row in body["credentials"]}
+    assert statuses["TRANSLATE_API_KEY"]["configured"] is True
+    assert statuses["DEEPL_API_KEY"]["configured"] is True
+    assert statuses["MICROSOFT_API_KEY"]["configured"] is False
+    assert "generic_secret" not in str(body)
+    assert "deepl_secret" not in str(body)
+
+
 def test_set_env_loopback_still_validates_allowlist():
     """Even on the loopback path, keys outside the allow-list must return 400 —
     the new guard must NOT bypass the existing allow-list enforcement."""

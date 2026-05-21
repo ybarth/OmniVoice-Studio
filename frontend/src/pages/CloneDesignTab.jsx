@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   PanelLeftOpen, PanelLeftClose, Command, Globe, SlidersHorizontal, Volume2, User,
   UploadCloud, Square, Mic, Save, UserSquare2, Settings2, ChevronUp, ChevronDown,
-  Sparkles, Play, Trash2, X, Languages, Undo2, ChevronLeft, ChevronRight,
+  Sparkles, Play, Pause, Trash2, X, Languages, Undo2, ChevronLeft, ChevronRight,
   ImagePlus,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -24,6 +24,7 @@ import {
   translationEngineOptionLabel,
   translationEngineUnavailableHint,
 } from '../utils/translationEngineStatus';
+import { playbackControlFor } from '../utils/audioPlaybackState';
 import { selectSynthesisProgressView } from '../utils/synthesisProgress';
 import { useAppStore } from '../store';
 import { Button, Input, Slider, Progress } from '../ui';
@@ -80,6 +81,8 @@ export default function CloneDesignTab(props) {
     isGenerating, generationTime,
     synthesisProgress,
     lastPromptTranslation,
+    promptPlayback,
+    togglePromptPlayback,
     applyPreset, insertTag,
     handleSelectProfile, handleDeleteProfile,
     handleRenameProfile, handleUploadProfilePhoto,
@@ -145,6 +148,12 @@ export default function CloneDesignTab(props) {
     translationEngine: activeTranslationEngine,
     streamProgressPct: synthesisProgress?.streamProgressPct,
     elapsedSeconds: synthesisProgress?.elapsedSeconds ?? Number.parseFloat(String(generationTime)),
+  });
+  const promptPlaybackControl = playbackControlFor({
+    activeKey: promptPlayback?.key || '',
+    key: 'prompt',
+    status: promptPlayback?.status || 'idle',
+    hasAudio: Boolean(promptPlayback?.hasAudio),
   });
 
   // Fetch personality presets from backend
@@ -867,6 +876,19 @@ export default function CloneDesignTab(props) {
               >
                 Translate and Synthesize
               </Button>
+              {promptPlaybackControl.visible && (
+                <Button
+                  variant="subtle"
+                  block
+                  disabled={promptPlaybackControl.disabled}
+                  onClick={() => togglePromptPlayback?.().catch(() => toast.error('Playback failed'))}
+                  leading={promptPlaybackControl.icon === 'pause' ? <Pause size={14} /> : <Play size={14} />}
+                  className="clone-footer-cta"
+                  title={`${promptPlaybackControl.title} for the latest prompt`}
+                >
+                  {promptPlaybackControl.label} Prompt
+                </Button>
+              )}
             </>
           )}
         </div>

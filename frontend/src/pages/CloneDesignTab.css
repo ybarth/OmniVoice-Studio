@@ -317,7 +317,7 @@
   gap: 6px;
   margin-top: 6px;
 }
-.clone-footer-actions--split { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.clone-footer-actions--split { grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); }
 .clone-footer-cta  { min-width: 0; }
 .clone-footer-cta .ui-btn__label {
   white-space: normal;

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Archive, Download, FileText, Languages, MessageSquareText, Mic, Plus, Play, Sparkles,
+  Archive, Download, FileText, Languages, MessageSquareText, Mic, Plus, Play, Pause, Sparkles,
   Square, Trash2, Upload, UserRound, Volume2, Wand2,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -14,9 +14,10 @@ import { listTranslationEngines } from '../api/engines';
 import { exportConversationBundle } from '../api/conversation';
 import { transcribeAudio } from '../api/capture';
 import { API } from '../api/client';
-import { playBlobAudio } from '../utils/media';
 import { profilePhotoPath } from '../utils/profileAudio';
+import { playbackControlFor } from '../utils/audioPlaybackState';
 import { useAppStore } from '../store';
+import useAudioPlayback from '../hooks/useAudioPlayback';
 import {
   addConversationSpeaker,
   buildConversationExportSelection,
@@ -124,6 +125,30 @@ function ProfilePicker({ profiles, value, onChange }) {
   );
 }
 
+function TurnAudioPlaybackButton({ turn, playback, onToggle }) {
+  const control = playbackControlFor({
+    activeKey: playback?.key || '',
+    key: turn.id,
+    status: playback?.status || 'idle',
+    hasAudio: Boolean(turn.audioUrl),
+  });
+
+  if (!control.visible) return null;
+
+  return (
+    <Button
+      variant="icon"
+      iconSize="sm"
+      title={control.title}
+      aria-label={`${control.label} ${turn.speakerName || 'turn'} audio`}
+      disabled={control.disabled}
+      onClick={() => onToggle(turn)}
+    >
+      {control.icon === 'pause' ? <Pause size={12} /> : <Play size={12} />}
+    </Button>
+  );
+}
+
 function formatRecordingTime(ms) {
   const seconds = Math.floor(ms / 1000);
   const minutes = Math.floor(seconds / 60);
@@ -178,6 +203,11 @@ export default function ConversationTab({ profiles = [], loadHistory }) {
   const turnRecorderRef = useRef(null);
   const turnRecordingChunksRef = useRef([]);
   const turnRecordingStreamRef = useRef(null);
+  const {
+    playback: turnPlayback,
+    playSource: playTurnAudioSource,
+    toggleSource: toggleTurnAudioSource,
+  } = useAudioPlayback();
   const autoDictateTurnRef = useRef(false);
   const recordingTimerRef = useRef(null);
   const audioFrameRef = useRef(null);
@@ -627,10 +657,22 @@ export default function ConversationTab({ profiles = [], loadHistory }) {
         progress_pct: 100,
       },
     }));
-    playBlobAudio(blob).catch(() => toast.error('Playback failed'));
     loadHistory?.().catch(() => {});
     return { audioUrl, audioId, audioPath };
   }, [loadHistory, pollGeneration]);
+
+  const playTurnAudio = useCallback((turnId, audioUrl, label = 'Turn audio') => (
+    playTurnAudioSource({ key: turnId, url: audioUrl, label })
+  ), [playTurnAudioSource]);
+
+  const toggleTurnPlayback = useCallback((turn) => {
+    if (!turn.audioUrl) return;
+    toggleTurnAudioSource({
+      key: turn.id,
+      url: turn.audioUrl,
+      label: `${turn.speakerName || 'Turn'} audio`,
+    }).catch(() => toast.error('Playback failed'));
+  }, [toggleTurnAudioSource]);
 
   const handleTurn = useCallback(async ({ speak = false } = {}) => {
     const sourceText = draftText.trim();
@@ -687,6 +729,10 @@ export default function ConversationTab({ profiles = [], loadHistory }) {
         sourceAudioTranscriptEngine: turnAudio?.engine || '',
       });
       addConversationTurn(turn);
+      if (speak && turn.audioUrl) {
+        playTurnAudio(turn.id, turn.audioUrl, `${turn.speakerName || 'Turn'} audio`)
+          .catch(() => toast.error('Playback failed'));
+      }
       setTurnAudio(null);
       setDraftText('');
       toast.success(speak ? 'Turn translated and spoken' : 'Turn translated');
@@ -715,6 +761,7 @@ export default function ConversationTab({ profiles = [], loadHistory }) {
     activeSpeaker,
     addConversationTurn,
     draftText,
+    playTurnAudio,
     startWorkClock,
     synthesizeTurnAudio,
     turnAudio,
@@ -1194,17 +1241,11 @@ export default function ConversationTab({ profiles = [], loadHistory }) {
               )}
               {turn.audioUrl && (
                 <div className="conversation-turn__audio">
-                  <Button
-                    variant="icon"
-                    iconSize="sm"
-                    title="Replay"
-                    onClick={() => {
-                      const audio = new Audio(turn.audioUrl);
-                      audio.play().catch(() => toast.error('Replay failed'));
-                    }}
-                  >
-                    <Play size={12} />
-                  </Button>
+                  <TurnAudioPlaybackButton
+                    turn={turn}
+                    playback={turnPlayback}
+                    onToggle={toggleTurnPlayback}
+                  />
                   <audio controls src={turn.audioUrl} />
                   <span><Volume2 size={11} /> {turn.audioId || 'audio'}</span>
                 </div>

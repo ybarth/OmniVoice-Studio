@@ -149,6 +149,8 @@ function App() {
     generationTime,
     synthesisProgress,
     lastPromptTranslation,
+    promptPlayback,
+    togglePromptPlayback,
     textAreaRef,
     ingestRefAudio,
     insertTag,
@@ -373,6 +375,8 @@ function App() {
                 vdStates={vdStates} setVdStates={setVdStates}
                 isGenerating={isGenerating} generationTime={generationTime} synthesisProgress={synthesisProgress}
                 lastPromptTranslation={lastPromptTranslation}
+                promptPlayback={promptPlayback}
+                togglePromptPlayback={togglePromptPlayback}
                 applyPreset={applyPreset} insertTag={insertTag}
                 handleSelectProfile={handleSelectProfile}
                 handleDeleteProfile={handleDeleteProfile}

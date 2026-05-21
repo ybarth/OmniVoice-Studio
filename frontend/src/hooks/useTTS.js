@@ -3,11 +3,12 @@ import { useAppStore } from '../store';
 import { generateSpeech, generationStatus } from '../api/generate';
 import { translatePromptForSynthesis } from '../api/translate';
 import { buildPromptTranslationReceipt, shouldTranslateBeforeSynthesis } from '../utils/promptTranslation';
-import { playBlobAudio, playPing } from '../utils/media';
+import { playPing } from '../utils/media';
 import { probeAudioDuration } from '../utils/format';
 import { CLONE_MAX_SECONDS, PRESETS } from '../utils/constants';
 import { shouldOpenSamplePreview } from '../utils/audioTrim';
 import { toast } from 'react-hot-toast';
+import useAudioPlayback from './useAudioPlayback';
 
 /**
  * Encapsulates TTS generation logic, streaming response handling,
@@ -45,6 +46,11 @@ export default function useTTS({ selectedProfile, setSelectedProfile, loadHistor
     elapsedSeconds: 0,
   });
   const [lastPromptTranslation, setLastPromptTranslation] = useState(null);
+  const {
+    playback: promptPlayback,
+    playSource: playPromptAudio,
+    toggleCurrent: togglePromptPlayback,
+  } = useAudioPlayback();
   const timerRef = useRef(null);
   const statusPollRef = useRef(null);
   const textAreaRef = useRef(null);
@@ -268,7 +274,8 @@ export default function useTTS({ selectedProfile, setSelectedProfile, loadHistor
       }));
       setIsGenerating(false);
 
-      playBlobAudio(blob).catch(() => toast.error('Playback failed'));
+      playPromptAudio({ key: 'prompt', blob, label: 'Generated prompt audio' })
+        .catch(() => toast.error('Playback failed'));
       loadHistory()
         .then(() => setSidebarTab('history'))
         .catch(() => toast.error('Audio generated, but history refresh failed'));
@@ -292,13 +299,18 @@ export default function useTTS({ selectedProfile, setSelectedProfile, loadHistor
       clearInterval(statusPollRef.current);
       if (!receivedAudio) setIsGenerating(false);
     }
-  }, [text, mode, selectedProfile, refAudio, refText, language, instruct, steps, cfg, speed, denoise, tShift, posTemp, classTemp, layerPenalty, postprocess, duration, vdStates, cloneTranslateProvider, loadHistory, setSidebarTab]);
+  }, [text, mode, selectedProfile, refAudio, refText, language, instruct, steps, cfg, speed, denoise, tShift, posTemp, classTemp, layerPenalty, postprocess, duration, vdStates, cloneTranslateProvider, loadHistory, playPromptAudio, setSidebarTab]);
 
   return {
     refAudio, setRefAudio,
     pendingTrimFile, setPendingTrimFile,
     isGenerating, generationTime, synthesisProgress,
     lastPromptTranslation,
+    promptPlayback: {
+      ...promptPlayback,
+      hasAudio: Boolean(promptPlayback.source),
+    },
+    togglePromptPlayback,
     textAreaRef,
     ingestRefAudio,
     insertTag, applyPreset,

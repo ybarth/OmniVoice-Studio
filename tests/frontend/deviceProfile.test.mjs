@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 const modulePath = new URL('../../frontend/src/utils/deviceProfile.ts', import.meta.url).pathname;
-const { deviceClassNames, getDeviceProfile } = await import(modulePath);
+const { deviceClassNames, getDeviceProfile, resolveEffectiveUiScale } = await import(modulePath);
 
 function fakeWindow({ width = 390, height = 844, coarse = true, pixelRatio = 3 } = {}) {
   return {
@@ -58,4 +58,37 @@ test('getDeviceProfile keeps desktop Mac as desktop', () => {
   assert.equal(profile.os, 'macos');
   assert.equal(profile.isIPhone, false);
   assert.equal(profile.isTouch, false);
+});
+
+test('resolveEffectiveUiScale caps desktop chrome when the window cannot fit medium scale', () => {
+  const compactDesktop = {
+    kind: 'desktop',
+    width: 1280,
+    height: 720,
+  };
+
+  assert.equal(resolveEffectiveUiScale(1.3, compactDesktop), 1);
+  assert.equal(resolveEffectiveUiScale(1.5, compactDesktop), 1);
+});
+
+test('resolveEffectiveUiScale allows larger desktop scale only when the window can hold it', () => {
+  assert.equal(resolveEffectiveUiScale(1.5, {
+    kind: 'desktop',
+    width: 1440,
+    height: 900,
+  }), 1.3);
+
+  assert.equal(resolveEffectiveUiScale(1.5, {
+    kind: 'desktop',
+    width: 1920,
+    height: 1080,
+  }), 1.5);
+});
+
+test('resolveEffectiveUiScale keeps phone chrome unscaled', () => {
+  assert.equal(resolveEffectiveUiScale(1.5, {
+    kind: 'phone',
+    width: 390,
+    height: 844,
+  }), 1);
 });

@@ -20,6 +20,7 @@ import { exportReveal } from './api/exports';
 import {
   deviceClassNames,
   getDeviceProfile,
+  resolveEffectiveUiScale,
   writeDeviceDataset,
 } from './utils/deviceProfile';
 
@@ -74,7 +75,7 @@ function App() {
   }, [device]);
 
   const effectiveMode = normalizeMode(mode);
-  const effectiveScale = device.kind === 'phone' ? 1 : uiScale;
+  const effectiveScale = resolveEffectiveUiScale(uiScale, device);
 
   const text = useAppStore(s => s.text);
   const setText = useAppStore(s => s.setText);

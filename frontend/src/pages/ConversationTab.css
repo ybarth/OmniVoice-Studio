@@ -108,7 +108,7 @@
 
 .conversation-speakers {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
   gap: 10px;
 }
 
@@ -156,7 +156,7 @@
 
 .conversation-card-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
   gap: 8px;
 }
 
@@ -361,6 +361,14 @@
   flex: 1;
 }
 
+.conversation-timeline {
+  order: 1;
+}
+
+.conversation-export-panel {
+  order: 2;
+}
+
 .conversation-timeline-head {
   justify-content: space-between;
   margin-bottom: 8px;
@@ -462,6 +470,24 @@
   gap: 8px;
   min-height: 0;
   overflow: auto;
+}
+
+@media (min-width: 761px) and (max-height: 820px), (min-width: 761px) and (max-width: 1320px) {
+  .conversation-tab {
+    height: auto;
+    min-height: 100%;
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+
+  .conversation-panel--timeline {
+    flex: 0 0 auto;
+    min-height: 220px;
+  }
+
+  .conversation-timeline {
+    min-height: 110px;
+  }
 }
 
 .conversation-empty {

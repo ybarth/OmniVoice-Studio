@@ -83,6 +83,23 @@ export function deviceClassNames(profile: DeviceProfile): string[] {
   ].filter(Boolean);
 }
 
+export function resolveEffectiveUiScale(
+  preferredScale: number,
+  profile: Pick<DeviceProfile, 'kind' | 'width' | 'height'>,
+): number {
+  if (profile.kind === 'phone') return 1;
+
+  const width = Number(profile.width) || 0;
+  const height = Number(profile.height) || 0;
+  const preferred = Number(preferredScale) || 1;
+
+  if (!width || !height) return preferred;
+
+  if (width < 1360 || height < 800) return Math.min(preferred, 1);
+  if (width < 1680 || height < 940) return Math.min(preferred, 1.3);
+  return preferred;
+}
+
 export function writeDeviceDataset(root: HTMLElement, profile: DeviceProfile): void {
   root.dataset.device = profile.kind;
   root.dataset.deviceOs = profile.os;

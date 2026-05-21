@@ -2409,7 +2409,7 @@ body {
 .vox-shell.app-container {
   grid-template-columns: 64px minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
-  height: calc(100dvh - var(--logs-footer-height, 28px));
+  height: calc((100dvh / var(--app-ui-scale, 1)) - var(--logs-footer-height, 28px));
   background:
     linear-gradient(180deg, rgba(245, 239, 226, 0.03), transparent 38%),
     var(--tower-ink);
@@ -2642,6 +2642,7 @@ html[data-iphone="true"] body {
   .vox-shell > .nav-rail {
     grid-column: 1;
     grid-row: 3;
+    display: flex !important;
   }
 
   .vox-shell .nav-rail {
@@ -2658,7 +2659,7 @@ html[data-iphone="true"] body {
     padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
     border-right: 0;
     border-top: 1px solid var(--tower-line);
-    z-index: 80;
+    z-index: 160;
   }
 
   .vox-shell > .main-content {

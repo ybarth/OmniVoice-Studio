@@ -252,7 +252,10 @@ function App() {
         `vox-mode-${effectiveMode}`,
         ...deviceClassNames(device),
       ].join(' ')}
-      style={{ zoom: effectiveScale }}
+      style={{
+        zoom: effectiveScale,
+        '--app-ui-scale': effectiveScale,
+      }}
     >
       {pendingTrimFile && (
         <ErrorBoundary name="audio-trimmer">

@@ -9,11 +9,12 @@
  *
  * Persisted: mode (the tab you were on), isSidebarCollapsed, uiScale. The
  * active-project / active-voice ids are transient. This focused shell opens
- * to Clone by default; older persisted modes are normalized in App.jsx.
+ * to Conversation by default; older persisted modes are normalized in App.jsx.
  */
 import type { StateCreator } from 'zustand';
 
 export type AppMode =
+  | 'conversation'
   | 'clone'
   | 'design'
   | 'projects'
@@ -51,7 +52,7 @@ export interface UiSlice {
 }
 
 export const createUiSlice: StateCreator<UiSlice, [], [], UiSlice> = (set, get) => ({
-  mode: 'clone',
+  mode: 'conversation',
   activeProjectId: null,
   activeProjectName: '',
   activeVoiceId: null,
@@ -85,7 +86,7 @@ export const createUiSlice: StateCreator<UiSlice, [], [], UiSlice> = (set, get) 
   closeVoiceProfile: () => {
     const prev = get().modeBeforeVoice;
     set({
-      mode: prev ?? 'clone',
+      mode: prev ?? 'conversation',
       activeVoiceId: null,
       modeBeforeVoice: null,
     });

@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Fingerprint, Wand2, FolderOpen, RefreshCw, Settings2, ChevronRight, ChevronDown, Zap, Trash2, Landmark } from 'lucide-react';
+import { MessagesSquare, Fingerprint, Wand2, FolderOpen, RefreshCw, Settings2, ChevronRight, ChevronDown, Zap, Trash2, Landmark } from 'lucide-react';
 import { Button, Badge } from '../ui';
 
 const VIEW_META = {
+  conversation: { label: 'Conversation', Icon: MessagesSquare, accent: '#d96b78', kicker: 'Studio' },
   clone:    { label: 'Voice Clone',  Icon: Fingerprint, accent: '#c65f4a', kicker: 'Studio' },
   design:   { label: 'Voice Design', Icon: Wand2,       accent: '#2b8f83', kicker: 'Studio' },
   projects: { label: 'Drive',        Icon: FolderOpen,  accent: '#2f67b1', kicker: 'Library' },
@@ -77,7 +78,7 @@ export default function Header({
       window.removeEventListener('scroll', computePos, true);
     };
   }, [flushOpen, computePos]);
-  const view = VIEW_META[mode] || VIEW_META.clone;
+  const view = VIEW_META[mode] || VIEW_META.conversation;
   const ViewIcon = view.Icon;
 
   // Fetch loaded models when dropdown opens

@@ -24,6 +24,7 @@ import {
 } from './utils/deviceProfile';
 
 const AudioTrimmer = lazy(() => import('./components/AudioTrimmer'));
+const ConversationTab = lazy(() => import('./pages/ConversationTab'));
 const CloneDesignTab = lazy(() => import('./pages/CloneDesignTab'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Drive = lazy(() => import('./pages/Projects'));
@@ -31,10 +32,10 @@ const LogsFooter = lazy(() => import('./components/LogsFooter'));
 
 const LazyFallback = () => <div className="app-lazy-fallback">Loading...</div>;
 
-const SUPPORTED_MODES = new Set(['clone', 'design', 'projects', 'settings']);
+const SUPPORTED_MODES = new Set(['conversation', 'clone', 'design', 'projects', 'settings']);
 
 function normalizeMode(mode) {
-  return SUPPORTED_MODES.has(mode) ? mode : 'clone';
+  return SUPPORTED_MODES.has(mode) ? mode : 'conversation';
 }
 
 function App() {
@@ -54,7 +55,7 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
-    if (!SUPPORTED_MODES.has(mode)) setModeRaw('clone');
+    if (!SUPPORTED_MODES.has(mode)) setModeRaw('conversation');
   }, [mode, setModeRaw]);
 
   useEffect(() => {
@@ -196,7 +197,13 @@ function App() {
 
       if (event.altKey && ['1', '2', '3', '4'].includes(event.key)) {
         event.preventDefault();
-        setMode(['clone', 'design', 'projects', 'settings'][Number(event.key) - 1]);
+        setMode(['conversation', 'clone', 'design', 'projects'][Number(event.key) - 1]);
+        return;
+      }
+
+      if (event.altKey && event.key === '5') {
+        event.preventDefault();
+        setMode('settings');
         return;
       }
 
@@ -299,7 +306,16 @@ function App() {
       <NavRail mode={effectiveMode} setMode={setMode} device={device} />
 
       <main className="main-content vox-main">
-        {effectiveMode === 'settings' ? (
+        {effectiveMode === 'conversation' ? (
+          <ErrorBoundary name="conversation">
+            <Suspense fallback={<LazyFallback />}>
+              <ConversationTab
+                profiles={profiles}
+                loadHistory={loadHistory}
+              />
+            </Suspense>
+          </ErrorBoundary>
+        ) : effectiveMode === 'settings' ? (
           <ErrorBoundary name="settings">
             <Suspense fallback={<LazyFallback />}>
               <Settings />

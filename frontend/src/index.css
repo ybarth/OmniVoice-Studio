@@ -2668,18 +2668,23 @@ html[data-iphone="true"] body {
   .vox-shell .nav-rail .rail-top {
     flex-direction: row;
     justify-content: space-around;
-    gap: 8px;
+    gap: 4px;
     max-width: 520px;
   }
 
   .vox-shell .rail-btn {
-    width: 25%;
-    max-width: 96px;
-    min-width: 64px;
+    width: auto;
+    flex: 1 1 0;
+    max-width: 92px;
+    min-width: 0;
     height: 52px;
     flex-direction: column;
     gap: 4px;
     color: var(--tower-muted);
+  }
+
+  .vox-shell .rail-btn:first-child {
+    flex-grow: 1.35;
   }
 
   .vox-shell .rail-btn.active::before {
@@ -2698,7 +2703,10 @@ html[data-iphone="true"] body {
     padding: 0;
     border: 0;
     background: transparent;
-    font-size: 11px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 9px;
     color: currentColor;
   }
 

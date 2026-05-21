@@ -1,9 +1,10 @@
 import React from 'react';
 import {
-  Fingerprint, Wand2, FolderOpen, Settings2,
+  MessagesSquare, Fingerprint, Wand2, FolderOpen, Settings2,
 } from 'lucide-react';
 
 const ITEMS = [
+  { id: 'conversation', label: 'Conversation', Icon: MessagesSquare, accent: '#d96b78' },
   { id: 'clone',    label: 'Clone',    Icon: Fingerprint, accent: '#c65f4a' },
   { id: 'design',   label: 'Design',   Icon: Wand2,       accent: '#2b8f83' },
   { id: 'projects', label: 'Drive',    Icon: FolderOpen,  accent: '#2f67b1' },

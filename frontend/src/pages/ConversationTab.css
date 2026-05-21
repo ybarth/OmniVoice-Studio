@@ -576,6 +576,7 @@
   .conversation-tab {
     height: auto;
     min-height: 100%;
+    flex: 0 0 auto;
     gap: 10px;
     padding: 10px;
     overflow: visible;
@@ -645,11 +646,23 @@
   .conversation-grid {
     display: flex;
     flex-direction: column;
+    flex: 0 0 auto;
     gap: 10px;
+    height: auto;
+    min-height: auto;
+    overflow: visible;
   }
 
   .conversation-panel--turn {
     order: -1;
+  }
+
+  .conversation-grid > .conversation-panel,
+  .conversation-panel--timeline {
+    flex: 0 0 auto;
+    height: auto;
+    min-height: auto;
+    overflow: visible;
   }
 
   .conversation-panel--speakers,
@@ -837,6 +850,10 @@
     grid-template-columns: 1fr;
     gap: 8px;
     padding: 10px;
+  }
+
+  .conversation-timeline {
+    overflow: visible;
   }
 
   .conversation-turn__meta {

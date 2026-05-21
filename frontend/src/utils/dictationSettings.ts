@@ -9,6 +9,14 @@ export type DictationSettings = {
   backend: string;
 };
 
+export type ConversationDictationAction = 'start-recording' | 'stop-recording' | 'transcribe-audio';
+
+export type ConversationDictationControlState = {
+  disabled: boolean;
+  label: string;
+  action: ConversationDictationAction;
+};
+
 type StorageLike = {
   getItem: (key: string) => string | null;
 };
@@ -48,6 +56,34 @@ export function buildDictationFormData(
   if (backend && backend !== DEFAULT_DICTATION_BACKEND) formData.append('backend', backend);
   if (language && language !== 'Auto') formData.append('language', language);
   return formData;
+}
+
+export function conversationDictationControlState({
+  isWorking,
+  isTurnRecording,
+  isDictatingText,
+  isTurnTranscribing,
+  hasTurnAudio,
+}: {
+  isWorking: boolean;
+  isTurnRecording: boolean;
+  isDictatingText: boolean;
+  isTurnTranscribing: boolean;
+  hasTurnAudio: boolean;
+}): ConversationDictationControlState {
+  if (isTurnRecording && isDictatingText) {
+    return {
+      disabled: false,
+      label: 'Stop Dictation',
+      action: 'stop-recording',
+    };
+  }
+
+  return {
+    disabled: isWorking || isTurnRecording || isTurnTranscribing,
+    label: 'Dictate Text',
+    action: hasTurnAudio ? 'transcribe-audio' : 'start-recording',
+  };
 }
 
 export function normalizeAudioLevels(bytes: Uint8Array, bins = 16): number[] {

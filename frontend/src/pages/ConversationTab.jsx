@@ -28,6 +28,7 @@ import {
 } from '../utils/conversationSession';
 import {
   buildDictationFormData,
+  conversationDictationControlState,
   normalizeAudioLevels,
   readDictationSettings,
 } from '../utils/dictationSettings';
@@ -148,6 +149,7 @@ export default function ConversationTab({ profiles = [], loadHistory }) {
   const [isWorking, setIsWorking] = useState(false);
   const [turnAudio, setTurnAudio] = useState(null);
   const [isTurnRecording, setIsTurnRecording] = useState(false);
+  const [isDictatingText, setIsDictatingText] = useState(false);
   const [isTurnTranscribing, setIsTurnTranscribing] = useState(false);
   const [recordingMs, setRecordingMs] = useState(0);
   const [audioLevels, setAudioLevels] = useState(EMPTY_AUDIO_LEVELS);
@@ -176,6 +178,7 @@ export default function ConversationTab({ profiles = [], loadHistory }) {
   const turnRecorderRef = useRef(null);
   const turnRecordingChunksRef = useRef([]);
   const turnRecordingStreamRef = useRef(null);
+  const autoDictateTurnRef = useRef(false);
   const recordingTimerRef = useRef(null);
   const audioFrameRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -298,6 +301,33 @@ export default function ConversationTab({ profiles = [], loadHistory }) {
     });
   }, []);
 
+  const transcribeTurnBlob = useCallback(async (blob, name = 'conversation-turn.webm') => {
+    setIsTurnTranscribing(true);
+    try {
+      const settings = readDictationSettings();
+      const formData = buildDictationFormData(blob, {
+        filename: name,
+        language: activeSpeaker.sourceLanguage,
+        mode: settings.mode,
+        backend: settings.backend,
+      });
+      const result = await transcribeAudio(formData);
+      const text = (result.text || '').trim();
+      if (!text) throw new Error('No speech detected');
+      setDraftText(prev => (prev.trim() ? `${prev.trim()}\n${text}` : text));
+      setTurnAudio(prev => prev?.blob === blob ? {
+        ...prev,
+        transcript: text,
+        engine: result.engine || '',
+      } : prev);
+      toast.success(`Dictated with ${result.engine || 'ASR'}`);
+    } catch (err) {
+      toast.error(`Dictation failed: ${err.message}`);
+    } finally {
+      setIsTurnTranscribing(false);
+    }
+  }, [activeSpeaker.sourceLanguage]);
+
   const startTurnRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -316,16 +346,27 @@ export default function ConversationTab({ profiles = [], loadHistory }) {
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) turnRecordingChunksRef.current.push(event.data);
       };
-      recorder.onstop = () => {
+      recorder.onstop = async () => {
         stopLiveRecordingFeedback();
         setIsTurnRecording(false);
+        const shouldDictate = autoDictateTurnRef.current;
+        autoDictateTurnRef.current = false;
         const blob = new Blob(turnRecordingChunksRef.current, { type: mimeType });
         turnRecordingChunksRef.current = [];
         if (blob.size < 1000) {
+          if (shouldDictate) setIsDictatingText(false);
           toast.error('Recording too short');
           return;
         }
-        setCapturedTurnAudio(blob, `conversation-turn-${Date.now()}.webm`);
+        const name = `conversation-turn-${Date.now()}.webm`;
+        setCapturedTurnAudio(blob, name);
+        if (shouldDictate) {
+          try {
+            await transcribeTurnBlob(blob, name);
+          } finally {
+            setIsDictatingText(false);
+          }
+        }
       };
 
       const AudioContextImpl = window.AudioContext || window.webkitAudioContext;
@@ -352,11 +393,13 @@ export default function ConversationTab({ profiles = [], loadHistory }) {
       recorder.start(250);
       setIsTurnRecording(true);
     } catch (err) {
+      autoDictateTurnRef.current = false;
+      setIsDictatingText(false);
       stopLiveRecordingFeedback();
       setIsTurnRecording(false);
       toast.error(`Microphone unavailable: ${err.message}`);
     }
-  }, [setCapturedTurnAudio, stopLiveRecordingFeedback]);
+  }, [setCapturedTurnAudio, stopLiveRecordingFeedback, transcribeTurnBlob]);
 
   const stopTurnRecording = useCallback(() => {
     const recorder = turnRecorderRef.current;
@@ -387,31 +430,30 @@ export default function ConversationTab({ profiles = [], loadHistory }) {
       toast.error('Record or upload turn audio first');
       return;
     }
-    setIsTurnTranscribing(true);
-    try {
-      const settings = readDictationSettings();
-      const formData = buildDictationFormData(turnAudio.blob, {
-        filename: turnAudio.name || 'conversation-turn.webm',
-        language: activeSpeaker.sourceLanguage,
-        mode: settings.mode,
-        backend: settings.backend,
-      });
-      const result = await transcribeAudio(formData);
-      const text = (result.text || '').trim();
-      if (!text) throw new Error('No speech detected');
-      setDraftText(prev => (prev.trim() ? `${prev.trim()}\n${text}` : text));
-      setTurnAudio(prev => prev ? {
-        ...prev,
-        transcript: text,
-        engine: result.engine || '',
-      } : prev);
-      toast.success(`Dictated with ${result.engine || 'ASR'}`);
-    } catch (err) {
-      toast.error(`Dictation failed: ${err.message}`);
-    } finally {
-      setIsTurnTranscribing(false);
+    await transcribeTurnBlob(turnAudio.blob, turnAudio.name || 'conversation-turn.webm');
+  }, [transcribeTurnBlob, turnAudio]);
+
+  const dictateControl = useMemo(() => conversationDictationControlState({
+    isWorking,
+    isTurnRecording,
+    isDictatingText,
+    isTurnTranscribing,
+    hasTurnAudio: Boolean(turnAudio?.blob),
+  }), [isDictatingText, isTurnRecording, isTurnTranscribing, isWorking, turnAudio]);
+
+  const handleDictateText = useCallback(async () => {
+    if (dictateControl.action === 'stop-recording') {
+      stopTurnRecording();
+      return;
     }
-  }, [activeSpeaker.sourceLanguage, turnAudio]);
+    if (dictateControl.action === 'transcribe-audio') {
+      await transcribeTurnAudio();
+      return;
+    }
+    autoDictateTurnRef.current = true;
+    setIsDictatingText(true);
+    await startTurnRecording();
+  }, [dictateControl.action, startTurnRecording, stopTurnRecording, transcribeTurnAudio]);
 
   const handleAddSpeaker = useCallback(() => {
     const nextSpeakers = addConversationSpeaker(conversationSpeakers, profiles, cloneTranslateProvider);
@@ -881,7 +923,7 @@ export default function ConversationTab({ profiles = [], loadHistory }) {
             <div className="conversation-audio-input__actions">
               <Button
                 variant={isTurnRecording ? 'danger' : 'subtle'}
-                disabled={isWorking || isTurnTranscribing}
+                disabled={isWorking || isTurnTranscribing || isDictatingText}
                 onClick={isTurnRecording ? stopTurnRecording : startTurnRecording}
                 leading={isTurnRecording ? <Square size={13} /> : <Mic size={13} />}
               >
@@ -889,20 +931,26 @@ export default function ConversationTab({ profiles = [], loadHistory }) {
               </Button>
               <Button
                 variant="subtle"
-                disabled={isWorking || isTurnRecording || isTurnTranscribing}
+                disabled={isWorking || isTurnRecording || isTurnTranscribing || isDictatingText}
                 onClick={() => fileInputRef.current?.click()}
                 leading={<Upload size={13} />}
               >
                 Upload Audio
               </Button>
               <Button
-                variant="subtle"
-                disabled={isWorking || isTurnRecording || !turnAudio?.blob}
+                variant={dictateControl.action === 'stop-recording' ? 'danger' : 'subtle'}
+                disabled={dictateControl.disabled}
                 loading={isTurnTranscribing}
-                onClick={transcribeTurnAudio}
-                leading={!isTurnTranscribing && <Wand2 size={13} />}
+                onClick={handleDictateText}
+                leading={!isTurnTranscribing && (
+                  dictateControl.action === 'stop-recording'
+                    ? <Square size={13} />
+                    : dictateControl.action === 'start-recording'
+                      ? <Mic size={13} />
+                      : <Wand2 size={13} />
+                )}
               >
-                Dictate Text
+                {dictateControl.label}
               </Button>
             </div>
 

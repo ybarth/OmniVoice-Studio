@@ -7,6 +7,7 @@ const {
   LS_CAPTURE_ASR_BACKEND,
   LS_CAPTURE_MODE,
   buildDictationFormData,
+  conversationDictationControlState,
   normalizeAudioLevels,
   readDictationSettings,
 } = await import(utilsPath);
@@ -45,6 +46,34 @@ test('buildDictationFormData sends mode, backend, language, and audio', async ()
   assert.equal(formData.get('backend'), 'faster-whisper');
   assert.equal(formData.get('language'), 'English');
   assert.equal(formData.get('audio').name, 'turn.webm');
+});
+
+test('conversation dictation control starts recording when no turn audio exists', () => {
+  assert.deepEqual(conversationDictationControlState({
+    isWorking: false,
+    isTurnRecording: false,
+    isDictatingText: false,
+    isTurnTranscribing: false,
+    hasTurnAudio: false,
+  }), {
+    disabled: false,
+    label: 'Dictate Text',
+    action: 'start-recording',
+  });
+});
+
+test('conversation dictation control stops active dictation recording', () => {
+  assert.deepEqual(conversationDictationControlState({
+    isWorking: false,
+    isTurnRecording: true,
+    isDictatingText: true,
+    isTurnTranscribing: false,
+    hasTurnAudio: false,
+  }), {
+    disabled: false,
+    label: 'Stop Dictation',
+    action: 'stop-recording',
+  });
 });
 
 test('normalizeAudioLevels converts analyser bytes into stable visual bins', () => {

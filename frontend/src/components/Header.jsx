@@ -4,9 +4,9 @@ import { MessagesSquare, Fingerprint, Wand2, FolderOpen, RefreshCw, Settings2, C
 import { Button, Badge } from '../ui';
 
 const VIEW_META = {
-  conversation: { label: 'Conversation', Icon: MessagesSquare, accent: '#d96b78', kicker: 'Studio' },
-  clone:    { label: 'Voice Clone',  Icon: Fingerprint, accent: '#c65f4a', kicker: 'Studio' },
-  design:   { label: 'Voice Design', Icon: Wand2,       accent: '#2b8f83', kicker: 'Studio' },
+  conversation: { label: 'Conversation', Icon: MessagesSquare, accent: '#d96b78', kicker: 'Builder' },
+  clone:    { label: 'Voice Clone',  Icon: Fingerprint, accent: '#c65f4a', kicker: 'Builder' },
+  design:   { label: 'Voice Design', Icon: Wand2,       accent: '#2b8f83', kicker: 'Builder' },
   projects: { label: 'Drive',        Icon: FolderOpen,  accent: '#2f67b1', kicker: 'Library' },
   settings: { label: 'Settings',     Icon: Settings2,   accent: '#c28b2c', kicker: 'System' },
 };

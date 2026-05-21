@@ -80,6 +80,7 @@ export default function Header({
   }, [flushOpen, computePos]);
   const view = VIEW_META[mode] || VIEW_META.conversation;
   const ViewIcon = view.Icon;
+  const mobileDeviceLabel = device?.isIPhone ? 'iPhone mobile form' : 'Mobile form';
 
   // Fetch loaded models when dropdown opens
   useEffect(() => {
@@ -149,6 +150,11 @@ export default function Header({
             </>
           ) : null}
         </div>
+        {device?.kind === 'phone' && (
+          <span className="hq-mobile-mode-badge" aria-label={`${view.label} is using the ${mobileDeviceLabel}`}>
+            <span className="hq-mobile-mode-badge__device">{mobileDeviceLabel}</span>
+          </span>
+        )}
         {import.meta.env.DEV && (
           <Button
             variant="ghost"

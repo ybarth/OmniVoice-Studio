@@ -2487,6 +2487,10 @@ body {
   letter-spacing: 0 !important;
 }
 
+.hq-mobile-mode-badge {
+  display: none;
+}
+
 .vox-shell .nav-rail {
   width: 64px;
   padding: 10px 8px;
@@ -2732,7 +2736,38 @@ html[data-iphone="true"] body {
   }
 
   .vox-shell .hq-col-left {
-    max-width: 54vw;
+    max-width: none;
+    gap: 8px;
+  }
+
+  .vox-shell .hq-mobile-mode-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: min(48vw, 210px);
+    height: 28px;
+    padding: 0 9px;
+    border: 1px solid color-mix(in srgb, var(--tower-verdigris) 48%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--tower-verdigris) 13%, var(--tower-ink));
+    color: var(--tower-ivory);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    box-shadow: inset 0 1px 0 rgba(245, 239, 226, 0.07);
+  }
+
+  .vox-shell .hq-mobile-mode-badge__device {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .vox-shell .hq-mobile-mode-badge__device {
+    color: var(--tower-verdigris);
   }
 
   .vox-shell .hq-col-center {
@@ -2854,6 +2889,12 @@ html[data-iphone="true"] body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .vox-shell .hq-mobile-mode-badge {
+    max-width: 172px;
+    padding: 0 7px;
+    font-size: 9px;
   }
 
   .vox-shell .main-content {

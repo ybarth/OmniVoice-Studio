@@ -7,6 +7,7 @@ const {
   buildConversationExportSelection,
   createConversationTurn,
   createDefaultSpeakers,
+  orderConversationSpeakersByActive,
   speakerDefaultsForTurn,
   updateSpeakerMemory,
 } = await import(utilsPath);
@@ -116,6 +117,23 @@ test('addConversationSpeaker appends numbered speakers and mounts the next profi
   assert.equal(fourth[3].id, 'speaker-4');
   assert.equal(fourth[3].name, 'Speaker 4');
   assert.equal(fourth[3].voiceProfileId, '');
+});
+
+test('orderConversationSpeakersByActive moves selected speaker first without mutating speaker memory', () => {
+  const speakers = createDefaultSpeakers([], 'openai');
+  const third = addConversationSpeaker(speakers, [], 'openai');
+
+  const ordered = orderConversationSpeakersByActive(third, 'speaker-b');
+
+  assert.deepEqual(
+    ordered.map(speaker => speaker.id),
+    ['speaker-b', 'speaker-a', 'speaker-3'],
+  );
+  assert.deepEqual(
+    third.map(speaker => speaker.id),
+    ['speaker-a', 'speaker-b', 'speaker-3'],
+  );
+  assert.notEqual(ordered, third);
 });
 
 test('buildConversationExportSelection supports all selected, range, and speaker combinations', () => {

@@ -22,6 +22,7 @@ import {
   buildConversationExportSelection,
   createConversationTurn,
   createDefaultSpeakers,
+  orderConversationSpeakersByActive,
   speakerDefaultsForTurn,
   updateSpeakerMemory,
 } from '../utils/conversationSession';
@@ -244,6 +245,10 @@ export default function ConversationTab({ profiles = [], loadHistory }) {
 
   const activeSpeaker = useMemo(
     () => speakerDefaultsForTurn(conversationSpeakers, activeSpeakerId),
+    [activeSpeakerId, conversationSpeakers],
+  );
+  const speakerCards = useMemo(
+    () => orderConversationSpeakersByActive(conversationSpeakers, activeSpeakerId),
     [activeSpeakerId, conversationSpeakers],
   );
   const activeEngine = translationEngines.find(engine => engine.id === activeSpeaker.translationProvider);
@@ -751,7 +756,7 @@ export default function ConversationTab({ profiles = [], loadHistory }) {
             </Button>
           </div>
           <div className="conversation-speakers">
-            {conversationSpeakers.map(speaker => (
+            {speakerCards.map(speaker => (
               <article
                 key={speaker.id}
                 className={`conversation-speaker-card ${activeSpeakerId === speaker.id ? 'active' : ''}`}

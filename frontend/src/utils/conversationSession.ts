@@ -145,6 +145,18 @@ export function updateSpeakerMemory(
   ));
 }
 
+export function orderConversationSpeakersByActive(
+  speakers: ConversationSpeaker[],
+  activeSpeakerId: string,
+): ConversationSpeaker[] {
+  const active = speakers.find(speaker => speaker.id === activeSpeakerId);
+  if (!active) return speakers.slice();
+  return [
+    active,
+    ...speakers.filter(speaker => speaker.id !== activeSpeakerId),
+  ];
+}
+
 export function speakerDefaultsForTurn(
   speakers: ConversationSpeaker[],
   speakerId: string,

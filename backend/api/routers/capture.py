@@ -32,6 +32,7 @@ async def transcribe_audio(
     language: Optional[str] = Form(None),
     model: Optional[str] = Form(None),
     mode: Optional[str] = Form(None),
+    backend: Optional[str] = Form(None),
 ):
     """Transcribe an audio file to text.
 
@@ -64,21 +65,28 @@ async def transcribe_audio(
 
         use_accurate = (mode or "").strip().lower() == "accurate"
 
+        requested_backend = (backend or "").strip()
+
         def _run():
+            if requested_backend and requested_backend != "capture-auto":
+                from services.asr_backend import get_asr_backend_by_id
+                selected = get_asr_backend_by_id(requested_backend)
+                result = selected.transcribe(tmp.name, word_timestamps=use_accurate)
+                return result, selected.id
             if use_accurate:
                 # Accurate mode: full WhisperX with forced alignment —
                 # for when the user explicitly wants word-level timing.
                 from services.asr_backend import get_active_asr_backend
-                backend = get_active_asr_backend()
-                result = backend.transcribe(tmp.name, word_timestamps=True)
+                selected = get_active_asr_backend()
+                result = selected.transcribe(tmp.name, word_timestamps=True)
             else:
                 # Fast mode (default): use the fastest available engine
                 # (MLX Turbo on Apple Silicon). Skip word_timestamps for
                 # ~30% latency reduction — dictation doesn't need them.
                 from services.asr_backend import get_capture_asr_backend
-                backend = get_capture_asr_backend()
-                result = backend.transcribe(tmp.name, word_timestamps=False)
-            return result, backend.id
+                selected = get_capture_asr_backend()
+                result = selected.transcribe(tmp.name, word_timestamps=False)
+            return result, selected.id
 
         from services.model_manager import _gpu_pool
         loop = asyncio.get_running_loop()

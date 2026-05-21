@@ -19,6 +19,7 @@ from services.incremental import segment_fingerprint
 from services.watermark import embed_watermark
 from api.routers.dub_core import _get_job, _save_job
 from services.cantonese_guard import (
+    apply_cantonese_pronunciation_guard,
     is_cantonese_target,
     normalize_tts_language,
     validate_spoken_cantonese_text,
@@ -157,6 +158,10 @@ async def dub_generate(job_id: str, req: DubRequest):
                     torch.manual_seed(used_seed)
 
                 try:
+                    if is_cantonese_target(lang):
+                        pronunciation_pass = apply_cantonese_pronunciation_guard(text)
+                        if pronunciation_pass.changed:
+                            text = pronunciation_pass.text
                     lang = normalize_tts_language(lang)
                     if is_cantonese_target(lang):
                         ok, reason = validate_spoken_cantonese_text(text)
@@ -492,12 +497,16 @@ async def preview_segment(job_id: str, req: SegmentPreviewRequest):
 
         lang = req.language if req.language != "Auto" else None
         if is_cantonese_target(lang):
-            ok, reason = validate_spoken_cantonese_text(req.text)
+            pronunciation_pass = apply_cantonese_pronunciation_guard(req.text)
+            tts_text = pronunciation_pass.text if pronunciation_pass.changed else req.text
+            ok, reason = validate_spoken_cantonese_text(tts_text)
             if not ok:
                 raise ValueError(reason)
             lang = normalize_tts_language(lang)
+        else:
+            tts_text = req.text
         audios = _model.generate(
-            text=req.text,
+            text=tts_text,
             language=lang,
             ref_audio=ref_audio,
             ref_text=ref_text,

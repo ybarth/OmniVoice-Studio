@@ -118,9 +118,15 @@ export interface Profile {
   kind: ProfileKind;
   language_code?: string;
   ref_audio?: string;
+  ref_audio_path?: string;
+  locked_audio_path?: string;
+  photo_path?: string;
   ref_text?: string;
+  instruct?: string;
+  language?: string;
   description?: string;
   created_at?: string;
+  updated_at?: string;
   is_locked?: boolean;
 }
 

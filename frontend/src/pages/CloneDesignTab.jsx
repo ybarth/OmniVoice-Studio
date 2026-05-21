@@ -3,6 +3,7 @@ import {
   PanelLeftOpen, PanelLeftClose, Command, Globe, SlidersHorizontal, Volume2, User,
   UploadCloud, Square, Mic, Save, UserSquare2, Settings2, ChevronUp, ChevronDown,
   Sparkles, Play, Trash2, X, Languages, Undo2, ChevronLeft, ChevronRight,
+  ImagePlus,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
@@ -27,7 +28,26 @@ import { selectSynthesisProgressView } from '../utils/synthesisProgress';
 import { useAppStore } from '../store';
 import { Button, Input, Slider, Progress } from '../ui';
 import { API } from '../api/client';
+import { profileAudioPath, profilePhotoPath } from '../utils/profileAudio';
 import './CloneDesignTab.css';
+
+function profileHasReferenceAudio(profile) {
+  return Boolean(profile?.locked_audio_path || profile?.ref_audio_path);
+}
+
+function profileReferenceAudioUrl(profile) {
+  if (!profileHasReferenceAudio(profile)) return '';
+  const token = profile.is_locked
+    ? (profile.locked_audio_path || profile.updated_at || profile.created_at || profile.id)
+    : (profile.ref_audio_path || profile.updated_at || profile.created_at || profile.id);
+  return `${API}${profileAudioPath(profile.id, token)}`;
+}
+
+function profilePhotoUrl(profile) {
+  if (!profile?.photo_path) return '';
+  const token = profile.photo_path || profile.updated_at || profile.created_at || profile.id;
+  return `${API}${profilePhotoPath(profile.id, token)}`;
+}
 
 export default function CloneDesignTab(props) {
   const {
@@ -62,6 +82,7 @@ export default function CloneDesignTab(props) {
     lastPromptTranslation,
     applyPreset, insertTag,
     handleSelectProfile, handleDeleteProfile,
+    handleRenameProfile, handleUploadProfilePhoto,
     handleSaveProfile, handleGenerate,
     startRecording, stopRecording,
     ingestRefAudio,
@@ -76,7 +97,12 @@ export default function CloneDesignTab(props) {
   const [engineInstalling, setEngineInstalling] = useState('');
   const [promptVariantHistory, setPromptVariantHistory] = useState([]);
   const [promptVariantIndex, setPromptVariantIndex] = useState(-1);
+  const [editingProfileId, setEditingProfileId] = useState('');
+  const [editingProfileName, setEditingProfileName] = useState('');
   const transformTimersRef = useRef([]);
+  const profilePhotoInputRef = useRef(null);
+  const profilePhotoTargetRef = useRef('');
+  const renameCancelledRef = useRef(false);
   const appliedSynthesisTranslationRef = useRef('');
   const promptTranslationBusy = isPromptTranslating || isPromptTransforming;
   const currentPromptVariant = promptVariantHistory[promptVariantIndex] || null;
@@ -98,6 +124,8 @@ export default function CloneDesignTab(props) {
   ];
   const activeTranslationEngine = translationEngines.find(engine => engine.id === cloneTranslateProvider);
   const activeEngineUnavailable = Boolean(activeTranslationEngine && activeTranslationEngine.installed === false);
+  const selectedProfileDetails = profiles.find(p => p.id === selectedProfile);
+  const selectedProfileAudioUrl = profileReferenceAudioUrl(selectedProfileDetails);
   const canUseTranslationEngine = !activeEngineUnavailable;
   const translationProgressDetail = activeTranslationEngine?.runtime_detail
     || (activeTranslationEngine?.runtime_status === 'loading'
@@ -259,6 +287,65 @@ export default function CloneDesignTab(props) {
     playPromptTransform(text, nextVariant.text);
   };
 
+  const handlePlayProfileReference = (profile, event) => {
+    event.stopPropagation();
+    const url = profileReferenceAudioUrl(profile);
+    if (!url) {
+      toast.error('This profile does not have saved reference audio');
+      return;
+    }
+    const audio = new Audio(url);
+    audio.play().catch(() => toast.error('Reference audio playback failed'));
+  };
+
+  const beginRenameProfile = (profile, event) => {
+    event.stopPropagation();
+    renameCancelledRef.current = false;
+    setEditingProfileId(profile.id);
+    setEditingProfileName(profile.name || '');
+  };
+
+  const finishRenameProfile = async (profile) => {
+    if (editingProfileId !== profile.id) return;
+    if (renameCancelledRef.current) {
+      renameCancelledRef.current = false;
+      return;
+    }
+    const nextName = editingProfileName.trim();
+    setEditingProfileId('');
+    setEditingProfileName('');
+    if (!nextName || nextName === profile.name) return;
+    await handleRenameProfile?.(profile.id, nextName);
+  };
+
+  const handleRenameProfileKeyDown = (event, profile) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      renameCancelledRef.current = true;
+      setEditingProfileId('');
+      setEditingProfileName('');
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      event.currentTarget.blur();
+    }
+  };
+
+  const requestProfilePhotoUpload = (profile, event) => {
+    event.stopPropagation();
+    profilePhotoTargetRef.current = profile.id;
+    profilePhotoInputRef.current?.click();
+  };
+
+  const handleProfilePhotoInput = async (event) => {
+    const file = event.target.files?.[0];
+    const profileId = profilePhotoTargetRef.current;
+    event.target.value = '';
+    if (!file || !profileId) return;
+    await handleUploadProfilePhoto?.(profileId, file);
+  };
+
   const handlePromptEdit = (nextText) => {
     setText(nextText);
     if (!isPromptTransforming) {
@@ -385,34 +472,106 @@ export default function CloneDesignTab(props) {
             {/* ── VOICE PROFILES ── */}
             {profiles.length > 0 && (
               <div className="clone-profile-block">
+                <input
+                  ref={profilePhotoInputRef}
+                  type="file"
+                  accept="image/*,.png,.jpg,.jpeg,.webp,.gif"
+                  className="dub-hidden-file"
+                  onChange={handleProfilePhotoInput}
+                />
                 <div className="label-row label-row--sm"><User size={12} /> Saved Profiles</div>
                 <div className="preset-grid">
-                  {profiles.map(p => (
-                    <div
-                      key={p.id}
-                      className={`preset-btn clone-profile-card ${selectedProfile === p.id ? 'profile-active' : ''}`}
-                      onClick={() => handleSelectProfile(p)}
-                    >
-                      <User size={10} /> {p.name}
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); handleDeleteProfile(p.id); }}
-                        className="clone-profile-delete"
-                        aria-label="Delete profile"
+                  {profiles.map(p => {
+                    const photoUrl = profilePhotoUrl(p);
+                    const isEditing = editingProfileId === p.id;
+                    return (
+                      <div
+                        key={p.id}
+                        className={`preset-btn clone-profile-card ${selectedProfile === p.id ? 'profile-active' : ''}`}
+                        onClick={() => handleSelectProfile(p)}
+                        onDoubleClick={(e) => beginRenameProfile(p, e)}
+                        title="Double-click to rename"
                       >
-                        <Trash2 size={10} />
-                      </button>
-                    </div>
-                  ))}
+                        <button
+                          type="button"
+                          className="clone-profile-photo"
+                          onClick={(e) => requestProfilePhotoUpload(p, e)}
+                          aria-label={`Upload photo for ${p.name}`}
+                          title="Upload profile photo"
+                        >
+                          {photoUrl
+                            ? <img src={photoUrl} alt="" />
+                            : <User size={12} />}
+                          <span className="clone-profile-photo__badge" aria-hidden="true">
+                            <ImagePlus size={9} />
+                          </span>
+                        </button>
+                        {isEditing ? (
+                          <input
+                            className="clone-profile-card__edit"
+                            value={editingProfileName}
+                            onChange={e => setEditingProfileName(e.target.value)}
+                            onClick={e => e.stopPropagation()}
+                            onDoubleClick={e => e.stopPropagation()}
+                            onKeyDown={e => handleRenameProfileKeyDown(e, p)}
+                            onBlur={() => finishRenameProfile(p)}
+                            autoFocus
+                            aria-label={`Rename ${p.name}`}
+                          />
+                        ) : (
+                          <span
+                            className="clone-profile-card__name"
+                            role="button"
+                            tabIndex={0}
+                            onDoubleClick={(e) => beginRenameProfile(p, e)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === 'F2') beginRenameProfile(p, e);
+                            }}
+                            title="Double-click to rename"
+                          >
+                            {p.name}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => handlePlayProfileReference(p, e)}
+                          className="clone-profile-reference"
+                          aria-label={`Play reference audio for ${p.name}`}
+                          title={profileHasReferenceAudio(p) ? 'Play reference audio' : 'No reference audio saved'}
+                          disabled={!profileHasReferenceAudio(p)}
+                        >
+                          <Volume2 size={10} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleDeleteProfile(p.id); }}
+                          className="clone-profile-delete"
+                          aria-label="Delete profile"
+                        >
+                          <Trash2 size={10} />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
 
             {selectedProfile && (
               <div className="clone-profile-banner">
-                <span className="clone-profile-banner__label">
-                  Using profile: {profiles.find(p => p.id === selectedProfile)?.name}
-                </span>
+                <div className="clone-profile-banner__main">
+                  <span className="clone-profile-banner__label">
+                    Using profile: {selectedProfileDetails?.name}
+                  </span>
+                  {selectedProfileAudioUrl && (
+                    <audio
+                      controls
+                      src={selectedProfileAudioUrl}
+                      className="clone-profile-banner__audio"
+                      preload="metadata"
+                    />
+                  )}
+                </div>
                 <Button
                   variant="ghost"
                   size="sm"

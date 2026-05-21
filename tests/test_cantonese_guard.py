@@ -80,6 +80,28 @@ def test_cantonese_realization_places_progressive_aspect_around_verb():
     assert result.level == RealizationLevel.PATTERN
 
 
+def test_cantonese_realization_rewrites_common_written_question_forms():
+    from services.cantonese_guard import RealizationLevel, realize_cantonese_for_tts
+
+    result = realize_cantonese_for_tts("這樣可以嗎？")
+
+    assert result.text == "咁樣得唔得？"
+    assert result.level == RealizationLevel.PRONUNCIATION
+    assert result.needs_llm_rewrite is False
+    assert "pronunciation:這樣" in result.applied_rules
+    assert "pronunciation:可以嗎" in result.applied_rules
+
+
+def test_cantonese_realization_keeps_unambiguous_spoken_cantonese_stable():
+    from services.cantonese_guard import RealizationLevel, realize_cantonese_for_tts
+
+    result = realize_cantonese_for_tts("我哋陣間去食飯啦。")
+
+    assert result.text == "我哋陣間去食飯啦。"
+    assert result.level == RealizationLevel.NONE
+    assert result.applied_rules == ()
+
+
 def test_cantonese_realization_does_not_blindly_rewrite_sentence_final_le():
     from services.cantonese_guard import RealizationLevel, realize_cantonese_for_tts
 

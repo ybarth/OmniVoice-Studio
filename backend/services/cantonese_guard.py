@@ -89,9 +89,40 @@ _VERB_MAP = {
 
 _RESIDUAL_REWRITE_MARKERS = {"了", "吧", "嗎", "吗", "的", "正在"}
 
+_PRONUNCIATION_SAFE_REPLACEMENTS = [
+    ("這樣", "咁樣"), ("这样", "咁樣"),
+    ("那樣", "嗰樣"), ("那样", "嗰樣"),
+    ("這麼", "咁"), ("这么", "咁"),
+    ("那麼", "咁"), ("那么", "咁"),
+    ("可以嗎", "得唔得"), ("可以吗", "得唔得"),
+    ("好嗎", "好唔好"), ("好吗", "好唔好"),
+    ("對嗎", "係咪"), ("对吗", "係咪"),
+    ("是嗎", "係咩"), ("是吗", "係咩"),
+    ("真的嗎", "真係咩"), ("真的吗", "真係咩"),
+    ("哪裡", "邊度"), ("哪里", "邊度"),
+    ("哪個", "邊個"), ("哪个", "邊個"),
+    ("誰", "邊個"), ("谁", "邊個"),
+    ("什麼時候", "幾時"), ("什么时候", "幾時"),
+    ("甚麼時候", "幾時"),
+    ("剛才", "頭先"), ("刚才", "頭先"),
+    ("今天", "今日"), ("明天", "聽日"), ("昨天", "琴日"),
+    ("早上", "朝早"), ("晚上", "夜晚"),
+    ("等一下", "等陣"),
+    ("一會兒", "陣間"), ("一会儿", "陣間"),
+    ("還是", "定係"), ("还是", "定係"),
+    ("還有", "仲有"), ("还有", "仲有"),
+    ("仍然", "仲"),
+    ("不用了", "唔使啦"),
+    ("不用", "唔使"),
+    ("不能", "唔可以"),
+    ("不要", "唔好"),
+    ("不是", "唔係"),
+]
+
 
 class RealizationLevel(str, Enum):
     NONE = "none"
+    PRONUNCIATION = "pronunciation"
     LEXICAL = "lexical"
     PATTERN = "pattern"
 
@@ -225,8 +256,47 @@ def _apply_lexical_rules(text: str) -> tuple[str, list[str]]:
     return value, applied
 
 
+def _apply_pronunciation_rules(text: str) -> tuple[str, list[str]]:
+    value = text
+    applied: list[str] = []
+
+    for source, target in _PRONUNCIATION_SAFE_REPLACEMENTS:
+        if source in value:
+            value = value.replace(source, target)
+            applied.append(f"pronunciation:{source}")
+
+    return value, applied
+
+
 def _needs_model_rewrite(text: str) -> bool:
     return any(marker in text for marker in _RESIDUAL_REWRITE_MARKERS)
+
+
+def apply_cantonese_pronunciation_guard(text: str) -> CantoneseRealization:
+    """Apply a narrow Cantonese TTS-safe orthography pass.
+
+    This layer is deliberately smaller than the full realization pass. It
+    avoids common written-Chinese question/time/location forms that often make
+    Cantonese TTS pronounce the sentence too literarily, while leaving broader
+    sentence grammar to the translation/rewrite engine.
+    """
+    value = text or ""
+    if count_cjk(value) == 0:
+        return CantoneseRealization(value, RealizationLevel.NONE)
+
+    realized, applied_rules = _apply_pronunciation_rules(value)
+    if not applied_rules:
+        return CantoneseRealization(
+            value,
+            RealizationLevel.NONE,
+            needs_llm_rewrite=_needs_model_rewrite(value),
+        )
+    return CantoneseRealization(
+        realized,
+        RealizationLevel.PRONUNCIATION,
+        needs_llm_rewrite=_needs_model_rewrite(realized),
+        applied_rules=tuple(applied_rules),
+    )
 
 
 def realize_cantonese_for_tts(text: str) -> CantoneseRealization:
@@ -243,14 +313,21 @@ def realize_cantonese_for_tts(text: str) -> CantoneseRealization:
 
     patterned, pattern_rules = _apply_pattern_rules(value)
     realized, lexical_rules = _apply_lexical_rules(patterned)
-    applied_rules = tuple(pattern_rules + lexical_rules)
+    realized, pronunciation_rules = _apply_pronunciation_rules(realized)
+    applied_rules = tuple(pattern_rules + lexical_rules + pronunciation_rules)
     if not applied_rules:
         return CantoneseRealization(
             value,
             RealizationLevel.NONE,
             needs_llm_rewrite=_needs_model_rewrite(value),
         )
-    level = RealizationLevel.PATTERN if pattern_rules else RealizationLevel.LEXICAL
+    level = (
+        RealizationLevel.PATTERN
+        if pattern_rules
+        else RealizationLevel.LEXICAL
+        if lexical_rules
+        else RealizationLevel.PRONUNCIATION
+    )
     return CantoneseRealization(
         realized,
         level,

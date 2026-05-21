@@ -2,18 +2,27 @@ import os
 import uuid
 import time
 import shutil
+import mimetypes
 from typing import Optional
 from fastapi import APIRouter, File, Form, UploadFile, HTTPException
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from core.db import db_conn
-from core.config import VOICES_DIR, OUTPUTS_DIR
+from core.config import VOICES_DIR, PROFILE_PHOTOS_DIR, OUTPUTS_DIR
 from core import event_bus
 from core.personalities import get_personalities
 from core.text_fields import clean_instruct_text
 
 router = APIRouter()
+
+_PHOTO_EXTENSIONS = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
 
 
 class ProfileUpdate(BaseModel):
@@ -183,6 +192,62 @@ def get_profile_audio(profile_id: str):
         return Response("Audio file missing", status_code=404)
     return FileResponse(audio_path, media_type="audio/wav")
 
+
+@router.get("/profiles/{profile_id}/photo")
+def get_profile_photo(profile_id: str):
+    with db_conn() as conn:
+        row = conn.execute("SELECT photo_path FROM voice_profiles WHERE id=?", (profile_id,)).fetchone()
+    if not row:
+        return Response("Profile not found", status_code=404)
+    if not row["photo_path"]:
+        return Response("No photo available", status_code=404)
+    photo_path = os.path.join(PROFILE_PHOTOS_DIR, row["photo_path"])
+    if not os.path.exists(photo_path):
+        return Response("Photo file missing", status_code=404)
+    media_type = mimetypes.guess_type(photo_path)[0] or "application/octet-stream"
+    return FileResponse(photo_path, media_type=media_type)
+
+
+@router.post("/profiles/{profile_id}/photo")
+async def upload_profile_photo(profile_id: str, photo: UploadFile = File(...)):
+    ext = os.path.splitext(photo.filename or "")[1].lower()
+    if ext not in _PHOTO_EXTENSIONS:
+        content_type = (photo.content_type or "").split(";")[0].strip().lower()
+        ext = next((candidate for candidate, media in _PHOTO_EXTENSIONS.items() if media == content_type), "")
+    if ext not in _PHOTO_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Profile photos must be PNG, JPG, WEBP, or GIF images.")
+
+    with db_conn() as conn:
+        current = conn.execute(
+            "SELECT photo_path FROM voice_profiles WHERE id=?", (profile_id,),
+        ).fetchone()
+        if not current:
+            raise HTTPException(
+                status_code=404,
+                detail="That voice profile doesn't exist. It may have been deleted from another tab.",
+            )
+
+    os.makedirs(PROFILE_PHOTOS_DIR, exist_ok=True)
+    photo_filename = f"{profile_id}_photo{ext}"
+    photo_path = os.path.join(PROFILE_PHOTOS_DIR, photo_filename)
+    with open(photo_path, "wb") as f:
+        f.write(await photo.read())
+
+    old_photo = current["photo_path"]
+    if old_photo and old_photo != photo_filename:
+        old_path = os.path.join(PROFILE_PHOTOS_DIR, old_photo)
+        if os.path.exists(old_path):
+            os.remove(old_path)
+
+    with db_conn() as conn:
+        conn.execute(
+            "UPDATE voice_profiles SET photo_path=? WHERE id=?",
+            (photo_filename, profile_id),
+        )
+        row = conn.execute("SELECT * FROM voice_profiles WHERE id=?", (profile_id,)).fetchone()
+    event_bus.emit("profiles", {"action": "updated", "id": profile_id})
+    return dict(row)
+
 @router.post("/profiles/{profile_id}/lock")
 async def lock_profile(
     profile_id: str,
@@ -243,13 +308,17 @@ async def unlock_profile(profile_id: str):
 @router.delete("/profiles/{profile_id}")
 def delete_profile(profile_id: str):
     with db_conn() as conn:
-        row = conn.execute("SELECT ref_audio_path, locked_audio_path FROM voice_profiles WHERE id=?", (profile_id,)).fetchone()
+        row = conn.execute("SELECT ref_audio_path, locked_audio_path, photo_path FROM voice_profiles WHERE id=?", (profile_id,)).fetchone()
         if row:
             for col in ["ref_audio_path", "locked_audio_path"]:
                 if row[col]:
                     path = os.path.join(VOICES_DIR, row[col])
                     if os.path.exists(path):
                         os.remove(path)
+            if row["photo_path"]:
+                path = os.path.join(PROFILE_PHOTOS_DIR, row["photo_path"])
+                if os.path.exists(path):
+                    os.remove(path)
         # Prevent FOREIGN KEY constraint failure
         conn.execute("UPDATE generation_history SET profile_id = NULL WHERE profile_id=?", (profile_id,))
         conn.execute("DELETE FROM voice_profiles WHERE id=?", (profile_id,))

@@ -23,6 +23,11 @@ import { getFrontendLogs, clearFrontendLogs } from '../utils/consoleBuffer';
 import { credentialBadgeLabel, credentialConfigured } from '../utils/credentialStatus';
 import { selectModelScanView } from '../utils/modelScanStatus';
 import { translationRuntimeLabel, translationEngineStatusTone } from '../utils/translationEngineStatus';
+import {
+  DEFAULT_DICTATION_BACKEND,
+  readDictationSettings,
+  writeDictationSettings,
+} from '../utils/dictationSettings';
 import { Tabs, Segmented, Button, Badge, Panel, Table, Progress } from '../ui';
 import { useAppStore } from '../store';
 import './Settings.css';
@@ -1486,7 +1491,24 @@ function HotkeyTab() {
   const [recording, setRecording] = useState(false);
   const [pending, setPending] = useState('');
   const [saving, setSaving] = useState(false);
+  const [dictationMode, setDictationMode] = useState(() => readDictationSettings().mode);
+  const [dictationBackend, setDictationBackend] = useState(() => readDictationSettings().backend);
+  const [engineData, setEngineData] = useState(null);
+  const [engineLoading, setEngineLoading] = useState(false);
   const tauri = isTauri();
+
+  const reloadEngines = useCallback(async () => {
+    setEngineLoading(true);
+    try {
+      setEngineData(await listEngines());
+    } catch (e) {
+      toast.error(`Could not load ASR engines: ${e.message}`);
+    } finally {
+      setEngineLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { reloadEngines(); }, [reloadEngines]);
 
   // Load the saved shortcut on mount.
   useEffect(() => {
@@ -1559,6 +1581,22 @@ function HotkeyTab() {
     }
   };
 
+  const asrBackends = engineData?.asr?.backends || [];
+  const selectedAsr = asrBackends.find(backend => backend.id === dictationBackend);
+  const setModePreference = (mode) => {
+    setDictationMode(mode);
+    writeDictationSettings({ mode });
+    toast.success(`Dictation mode set to ${mode}`);
+  };
+  const setBackendPreference = (backend) => {
+    setDictationBackend(backend);
+    writeDictationSettings({ backend });
+    const label = backend === DEFAULT_DICTATION_BACKEND
+      ? 'Fast auto'
+      : (asrBackends.find(item => item.id === backend)?.display_name || backend);
+    toast.success(`Dictation ASR set to ${label}`);
+  };
+
   return (
     <section className="settings-section">
       <h2><Keyboard size={16} color="#83a598" /> Capture & Dictation</h2>
@@ -1582,6 +1620,50 @@ function HotkeyTab() {
           {recording ? '⌨︎ listening (Esc to cancel)' : (pending || '—')}
         </span>
       </div>
+
+      <div className="settings-dictation-grid">
+        <label>
+          <span className="label">Dictation mode</span>
+          <select
+            className="input-base input-base--xs"
+            value={dictationMode}
+            onChange={e => setModePreference(e.target.value)}
+          >
+            <option value="fast">Fast</option>
+            <option value="accurate">Accurate</option>
+          </select>
+        </label>
+        <label>
+          <span className="label">Dictation ASR</span>
+          <select
+            className="input-base input-base--xs"
+            value={dictationBackend}
+            onChange={e => setBackendPreference(e.target.value)}
+          >
+            <option value={DEFAULT_DICTATION_BACKEND}>Fast auto capture</option>
+            {asrBackends.map(backend => (
+              <option key={backend.id} value={backend.id}>
+                {backend.display_name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="settings-dictation-status">
+          <Badge tone={!selectedAsr || selectedAsr.available ? 'success' : 'warn'} size="xs">
+            {dictationBackend === DEFAULT_DICTATION_BACKEND
+              ? 'auto'
+              : (selectedAsr?.available ? 'ready' : 'unavailable')}
+          </Badge>
+          <Button variant="icon" iconSize="sm" title="Refresh ASR engines" onClick={reloadEngines} loading={engineLoading}>
+            <RefreshCw size={12} />
+          </Button>
+        </div>
+      </div>
+      {selectedAsr && !selectedAsr.available && (
+        <p className="settings-prose settings-prose--compact">
+          {selectedAsr.reason}
+        </p>
+      )}
 
       <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
         <Button

@@ -18,6 +18,7 @@ export type AppMode =
   | 'generate'
   | 'dub'
   | 'clone'
+  | 'conversation'
   | 'design'
   | 'stories'
   | 'voice'

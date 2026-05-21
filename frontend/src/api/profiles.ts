@@ -26,6 +26,12 @@ export async function updateProfile(id: string, patch: Partial<Profile>): Promis
   return r.json() as Promise<Profile>;
 }
 
+export async function uploadProfilePhoto(id: string, file: File): Promise<Profile> {
+  const formData = new FormData();
+  formData.append('photo', file, file.name || 'profile-photo.png');
+  return apiPost<Profile>(`/profiles/${id}/photo`, formData);
+}
+
 export async function deleteProfile(id: string): Promise<Response> {
   return apiFetch(`/profiles/${id}`, { method: 'DELETE' });
 }

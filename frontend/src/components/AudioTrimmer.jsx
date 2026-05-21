@@ -4,7 +4,8 @@ import {
   clamp, encodeWav, computePeaksFromChannel, computePeaksAsync, pickTickInterval,
   xToTime as xToTimeUtil, pickHandle as pickHandleUtil,
   applyDrag as applyDragUtil, zoomAtCursor, zoomCenter, sliceToMono,
-  decodeToMonoLowRate, DEFAULT_PEAK_BUCKETS,
+  decodeToMonoLowRate, DEFAULT_PEAK_BUCKETS, createAudioPreviewUrl,
+  createSelectionPreviewUrl, selectionPreviewCursor, shouldTrackPointerMove,
 } from '../utils/audioTrim.js';
 import { Dialog, Button } from '../ui';
 import './AudioTrimmer.css';
@@ -40,6 +41,8 @@ export default function AudioTrimmer({ file, maxSeconds = 15, onConfirm, onCance
   const dragStateRef = useRef(null);
   const pointerRef = useRef(null);
   const stateRef = useRef({ start: 0, end: 0, cursor: 0, viewStart: 0, viewEnd: 0, duration: 0 });
+  const selectionPreviewRef = useRef(null);
+  const playbackRangeRef = useRef({ start: 0, end: 0 });
 
   const [ready, setReady] = useState(false);
   const [decoding, setDecoding] = useState(true);
@@ -54,6 +57,8 @@ export default function AudioTrimmer({ file, maxSeconds = 15, onConfirm, onCance
   const [loop, setLoop] = useState(true);
   const [startInput, setStartInput] = useState('0.00');
   const [endInput, setEndInput] = useState('0.00');
+  const [audioUrl, setAudioUrl] = useState('');
+  const [selectionAudioUrl, setSelectionAudioUrl] = useState('');
 
   const [audioMeta, setAudioMeta] = useState(null);
 
@@ -106,15 +111,30 @@ export default function AudioTrimmer({ file, maxSeconds = 15, onConfirm, onCance
     return () => { cancelled = true; };
   }, [file, maxSeconds]);
 
-  // Bind audio src
   useEffect(() => {
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    const a = audioRef.current;
-    if (a) { a.src = url; a.load(); }
+    if (!file) {
+      setAudioUrl('');
+      setSelectionAudioUrl('');
+      return;
+    }
+    const preview = createAudioPreviewUrl(file);
+    setAudioUrl(preview.url);
     return () => {
-      if (a) { try { a.pause(); a.removeAttribute('src'); a.load(); } catch {} }
-      URL.revokeObjectURL(url);
+      if (selectionPreviewRef.current) {
+        selectionPreviewRef.current.revoke();
+        selectionPreviewRef.current = null;
+      }
+      const a = audioRef.current;
+      if (a) {
+        try {
+          a.pause();
+          a.removeAttribute('src');
+          a.load();
+        } catch {}
+      }
+      setAudioUrl('');
+      setSelectionAudioUrl('');
+      preview.revoke();
     };
   }, [file]);
 
@@ -325,9 +345,6 @@ export default function AudioTrimmer({ file, maxSeconds = 15, onConfirm, onCance
     if (!buffer || !rect) return;
     const drag = dragStateRef.current;
     if (!drag) {
-      const t = xToTimeUtil(pos.clientX - rect.left, rect.width,
-        stateRef.current.viewStart, stateRef.current.viewEnd);
-      setCursor(clamp(t, 0, stateRef.current.duration));
       return;
     }
     const out = applyDragUtil(stateRef.current, pos.clientX, rect.left, rect.width, drag, 0.02);
@@ -347,6 +364,7 @@ export default function AudioTrimmer({ file, maxSeconds = 15, onConfirm, onCance
 
   useEffect(() => {
     const move = (e) => {
+      if (!shouldTrackPointerMove(dragStateRef.current)) return;
       pointerRef.current = { clientX: e.clientX };
       schedulePointer();
     };
@@ -457,13 +475,50 @@ export default function AudioTrimmer({ file, maxSeconds = 15, onConfirm, onCance
     setViewEnd(nve);
   };
 
-  const togglePlay = () => {
+  const syncPlayheadFromAudio = useCallback(() => {
     const a = audioRef.current;
     if (!a) return;
-    if (playing) { a.pause(); setPlaying(false); return; }
+    const { start: s, end: e } = playbackRangeRef.current;
+    const nextCursor = selectionPreviewCursor(s, a.currentTime, e);
+    stateRef.current = { ...stateRef.current, cursor: nextCursor };
+    setCursor(nextCursor);
+    scheduleDraw();
+  }, [scheduleDraw]);
+
+  const togglePlay = () => {
+    const a = audioRef.current;
+    const buffer = bufferRef.current;
+    if (!a) return;
+    if (playing) {
+      a.pause();
+      setPlaying(false);
+      syncPlayheadFromAudio();
+      return;
+    }
+    if (!buffer) return;
     const s = stateRef.current.start;
+    const e = stateRef.current.end;
+    if (e <= s) return;
+    if (selectionPreviewRef.current) {
+      selectionPreviewRef.current.revoke();
+      selectionPreviewRef.current = null;
+    }
+    const preview = createSelectionPreviewUrl(buffer, s, e);
+    selectionPreviewRef.current = preview;
+    playbackRangeRef.current = { start: s, end: e };
+    setSelectionAudioUrl(preview.url);
+    stateRef.current = { ...stateRef.current, cursor: s };
+    setCursor(s);
+    scheduleDraw();
+    a.pause();
+    a.src = preview.url;
+    a.load();
+    if (!a.currentSrc) {
+      setError('Audio preview is still preparing. Try again in a moment.');
+      return;
+    }
     const doPlay = () => {
-      try { a.currentTime = s; } catch (err) { console.warn('currentTime set failed', err); }
+      try { a.currentTime = 0; } catch (err) { console.warn('currentTime set failed', err); }
       a.play().then(() => setPlaying(true)).catch((err) => {
         setError('Playback failed: ' + (err.message || err));
       });
@@ -477,28 +532,32 @@ export default function AudioTrimmer({ file, maxSeconds = 15, onConfirm, onCance
     }
   };
 
-  useEffect(() => {
+  const handleAudioEnded = () => {
     const a = audioRef.current;
-    if (!a) return;
-    let raf;
-    const tick = () => {
-      if (!a.paused) {
-        setCursor(a.currentTime);
-        const { start: s, end: e } = stateRef.current;
-        if (a.currentTime >= e) {
-          if (loop) {
-            try { a.currentTime = s; } catch {}
-          } else {
-            a.pause();
-            setPlaying(false);
-          }
-        }
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [loop]);
+    const { start: s, end: e } = playbackRangeRef.current;
+    if (loop && a && selectionPreviewRef.current) {
+      stateRef.current = { ...stateRef.current, cursor: s };
+      setCursor(s);
+      scheduleDraw();
+      try { a.currentTime = 0; } catch {}
+      a.play().then(() => setPlaying(true)).catch((err) => {
+        setPlaying(false);
+        setError('Playback failed: ' + (err.message || err));
+      });
+      return;
+    }
+    stateRef.current = { ...stateRef.current, cursor: e };
+    setCursor(e);
+    scheduleDraw();
+    setPlaying(false);
+  };
+
+  useEffect(() => {
+    if (!playing) return undefined;
+    syncPlayheadFromAudio();
+    const interval = setInterval(syncPlayheadFromAudio, 50);
+    return () => clearInterval(interval);
+  }, [playing, syncPlayheadFromAudio]);
 
   const duration = end - start;
   const tooLong = duration > maxSeconds;
@@ -671,7 +730,16 @@ export default function AudioTrimmer({ file, maxSeconds = 15, onConfirm, onCance
           </div>
         </div>
 
-        <audio ref={audioRef} preload="auto" onEnded={() => setPlaying(false)} className="audio-trimmer__audio" />
+        <audio
+          ref={audioRef}
+          src={selectionAudioUrl || audioUrl || undefined}
+          preload="auto"
+          onEnded={handleAudioEnded}
+          onPlaying={syncPlayheadFromAudio}
+          onSeeked={syncPlayheadFromAudio}
+          onTimeUpdate={syncPlayheadFromAudio}
+          className="audio-trimmer__audio"
+        />
       </div>
     </Dialog>
   );

@@ -47,6 +47,7 @@ _BASE_SCHEMA = """
         seed INTEGER DEFAULT NULL,
         is_locked INTEGER DEFAULT 0,
         personality TEXT DEFAULT '',
+        photo_path TEXT DEFAULT '',
         created_at REAL
     );
     CREATE TABLE IF NOT EXISTS generation_history (
@@ -135,6 +136,7 @@ _ALLOWED_MIGRATIONS = {
     ("voice_profiles", "seed"),
     ("voice_profiles", "is_locked"),
     ("voice_profiles", "personality"),
+    ("voice_profiles", "photo_path"),
     ("generation_history", "seed"),
     ("dub_history", "content_hash"),
 }
@@ -172,6 +174,9 @@ def _migrate(conn, current: int) -> int:
     if current < 4:
         _add_column_if_missing(conn, "voice_profiles", "personality", "TEXT DEFAULT ''")
         current = 4
+    if current < 5:
+        _add_column_if_missing(conn, "voice_profiles", "photo_path", "TEXT DEFAULT ''")
+        current = 5
     return current
 
 

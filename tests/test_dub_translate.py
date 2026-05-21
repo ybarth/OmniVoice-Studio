@@ -185,7 +185,7 @@ async def test_google_cantonese_translation_is_realized_before_response(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_google_cantonese_translation_flags_need_for_model_rewrite(monkeypatch):
+async def test_google_cantonese_translation_keeps_best_effort_when_rewrite_still_needed(monkeypatch):
     from api.routers import dub_translate
 
     class FakeTranslator:
@@ -213,7 +213,8 @@ async def test_google_cantonese_translation_flags_need_for_model_rewrite(monkeyp
     assert row['text'] == '我哋喺香港講中文了。'
     assert row['cantonese_realized'] is True
     assert row['needs_cantonese_rewrite'] is True
-    assert 'Tencent or OpenAI' in row['error']
+    assert 'error' not in row
+    assert 'whole-sentence spoken Hong Kong rewrite' in row['cantonese_rewrite_warning']
 
 
 @pytest.mark.asyncio
@@ -739,6 +740,73 @@ async def test_hymt_provider_retries_when_rule_layer_needs_model_rewrite(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_hymt_provider_returns_best_effort_when_rewrite_still_needed(monkeypatch):
+    from types import SimpleNamespace
+    import sys
+    from api.routers import dub_translate
+
+    calls = {'generate_count': 0, 'prompts': []}
+
+    class FakeTensor:
+        shape = (1, 3)
+
+        def __getitem__(self, key):
+            if isinstance(key, slice):
+                return [4, 5]
+            return [1, 2, 3][key]
+
+    class FakeTokenizer:
+        def apply_chat_template(self, messages, **kwargs):
+            calls['prompts'].append(messages[0]['content'])
+            return FakeTensor()
+
+        def decode(self, token_ids, **kwargs):
+            if calls['generate_count'] == 1:
+                return '我們在香港說中文了。'
+            return '我哋喺香港講中文了。'
+
+    class FakeModel:
+        device = 'cpu'
+
+        def generate(self, *args, **kwargs):
+            calls['generate_count'] += 1
+            return [[1, 2, 3, 4, 5]]
+
+    class FakeNoGrad:
+        def __enter__(self):
+            return None
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    fake_torch = SimpleNamespace(no_grad=lambda: FakeNoGrad())
+    monkeypatch.setitem(sys.modules, 'torch', fake_torch)
+    monkeypatch.setattr(
+        dub_translate,
+        '_load_local_translation_model',
+        lambda _model_id: (FakeTokenizer(), FakeModel()),
+    )
+    monkeypatch.setattr(dub_translate.translation_engines, 'is_model_installed', lambda _engine_id: True)
+    monkeypatch.setenv('OMNIVOICE_UNLOAD_HYMT', '1')
+
+    req = _FakeReq(
+        segments=[_FakeSeg('s1', 'We spoke Chinese in Hong Kong.')],
+        target_lang='yue',
+        provider='hymt-7b',
+        source_lang='en',
+    )
+
+    resp = await dub_translate.dub_translate(req)
+    row = resp['translated'][0]
+
+    assert row['text'] == '我哋喺香港講中文了。'
+    assert row['needs_cantonese_rewrite'] is True
+    assert 'error' not in row
+    assert 'whole-sentence spoken Hong Kong rewrite' in row['cantonese_rewrite_warning']
+    assert calls['generate_count'] == 3
+
+
+@pytest.mark.asyncio
 async def test_openai_provider_rewrites_cantonese_draft_after_translation_retries(monkeypatch):
     import io
     import json
@@ -784,6 +852,54 @@ async def test_openai_provider_rewrites_cantonese_draft_after_translation_retrie
     rewrite_user = calls[2]['messages'][1]['content']
     assert 'whole-sentence spoken Hong Kong Cantonese' in rewrite_system
     assert '我哋喺香港講中文了。' in rewrite_user
+
+
+@pytest.mark.asyncio
+async def test_openai_provider_returns_best_effort_when_cantonese_rewrite_still_needs_work(monkeypatch):
+    import io
+    import json
+    from api.routers import dub_translate
+
+    calls = []
+    responses = [
+        {"choices": [{"message": {"content": "我們在香港說中文了。"}}]},
+        {"choices": [{"message": {"content": "我哋喺香港講中文了。"}}]},
+        {"choices": [{"message": {"content": "我哋喺香港講中文了。"}}]},
+    ]
+
+    class FakeHTTPResponse:
+        def __init__(self, body):
+            self.body = body
+
+        def __enter__(self):
+            return io.BytesIO(json.dumps(self.body).encode("utf-8"))
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def fake_urlopen(request, timeout=None):
+        payload = json.loads(request.data.decode("utf-8"))
+        calls.append(payload)
+        return FakeHTTPResponse(responses.pop(0))
+
+    monkeypatch.setattr(dub_translate.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    req = _FakeReq(
+        segments=[_FakeSeg('s1', 'We spoke Chinese in Hong Kong.')],
+        target_lang='yue',
+        provider='openai',
+        source_lang='en',
+    )
+
+    resp = await dub_translate.dub_translate(req)
+    row = resp['translated'][0]
+
+    assert row['text'] == '我哋喺香港講中文了。'
+    assert row['needs_cantonese_rewrite'] is True
+    assert 'error' not in row
+    assert 'whole-sentence spoken Hong Kong rewrite' in row['cantonese_rewrite_warning']
+    assert len(calls) == 3
 
 
 @pytest.mark.asyncio

@@ -282,6 +282,30 @@ def _error_message(exc: Exception) -> str:
     return str(exc) or f"{type(exc).__name__}: {repr(exc)}"
 
 
+CANTONESE_REWRITE_REQUIRED = "Cantonese output needs whole-sentence spoken Hong Kong rewrite"
+
+
+def _is_cantonese_rewrite_required_error(message: str | None) -> bool:
+    return bool(message and CANTONESE_REWRITE_REQUIRED in message)
+
+
+def _cantonese_rewrite_warning_row(
+    segment_id,
+    text: str,
+    was_realized: bool,
+    warning: str = CANTONESE_REWRITE_REQUIRED,
+) -> dict:
+    row = {
+        "id": segment_id,
+        "text": text,
+        "needs_cantonese_rewrite": True,
+        "cantonese_rewrite_warning": warning,
+    }
+    if was_realized:
+        row["cantonese_realized"] = True
+    return row
+
+
 def _translation_guard_error(text: str, code: str) -> str | None:
     if not _looks_like_target(text, code):
         return (
@@ -317,10 +341,8 @@ def _finalize_translation_row(row: dict, target_code: str) -> dict:
         next_row["cantonese_realized"] = True
     if needs_rewrite:
         next_row["needs_cantonese_rewrite"] = True
-        guard_err = (
-            "Cantonese realization needs Tencent or OpenAI to rewrite this "
-            "whole sentence into natural Hong Kong spoken Cantonese."
-        )
+        next_row["cantonese_rewrite_warning"] = CANTONESE_REWRITE_REQUIRED
+        guard_err = None
     if guard_err:
         next_row["error"] = guard_err
     return next_row
@@ -503,6 +525,8 @@ async def dub_translate(req: TranslateRequest):
                         last_err = None
                         was_realized = False
                         rewrite_draft = ""
+                        best_effort_cantonese = ""
+                        best_effort_was_realized = False
                         for attempt in range(attempts):
                             user_prompt = _local_translation_prompt(src_lang, tgt_code, seg.text, attempt=attempt)
                             out_text = _generate_local_text(user_prompt)
@@ -512,8 +536,10 @@ async def dub_translate(req: TranslateRequest):
                                 out_text, was_realized, needs_rewrite = _realize_cantonese_text_for_target(out_text, tgt_code)
                                 if needs_rewrite:
                                     rewrite_draft = out_text
+                                    best_effort_cantonese = out_text
+                                    best_effort_was_realized = was_realized
                                 last_err = (
-                                    "Cantonese output needs whole-sentence spoken Hong Kong rewrite"
+                                    CANTONESE_REWRITE_REQUIRED
                                     if needs_rewrite
                                     else _translation_guard_error(out_text, tgt_code)
                                 )
@@ -536,11 +562,26 @@ async def dub_translate(req: TranslateRequest):
                                 last_err = "empty Cantonese rewrite response"
                             else:
                                 out_text, was_realized, needs_rewrite = _realize_cantonese_text_for_target(out_text, tgt_code)
+                                if needs_rewrite:
+                                    best_effort_cantonese = out_text
+                                    best_effort_was_realized = was_realized
                                 last_err = (
-                                    "Cantonese output needs whole-sentence spoken Hong Kong rewrite"
+                                    CANTONESE_REWRITE_REQUIRED
                                     if needs_rewrite
                                     else _translation_guard_error(out_text, tgt_code)
                                 )
+                        if (
+                            last_err
+                            and _is_cantonese_rewrite_required_error(last_err)
+                            and best_effort_cantonese
+                            and is_cantonese_target(tgt_code)
+                        ):
+                            results.append(_cantonese_rewrite_warning_row(
+                                seg.id,
+                                best_effort_cantonese,
+                                best_effort_was_realized,
+                            ))
+                            continue
                         if last_err:
                             raise RuntimeError(last_err)
                         row = {"id": seg.id, "text": out_text}
@@ -668,6 +709,8 @@ async def dub_translate(req: TranslateRequest):
                 system_msg = _build_prompt(src_lang, tgt_code)
                 last_err = None
                 rewrite_draft = ""
+                best_effort_cantonese = ""
+                best_effort_was_realized = False
                 translation_engines.set_runtime_status(
                     provider,
                     "generating",
@@ -698,8 +741,10 @@ async def dub_translate(req: TranslateRequest):
                         out_text, was_realized, needs_rewrite = _realize_cantonese_text_for_target(out_text, tgt_code)
                         if needs_rewrite:
                             rewrite_draft = out_text
+                            best_effort_cantonese = out_text
+                            best_effort_was_realized = was_realized
                         guard_err = (
-                            "Cantonese output needs whole-sentence spoken Hong Kong rewrite"
+                            CANTONESE_REWRITE_REQUIRED
                             if needs_rewrite
                             else _translation_guard_error(out_text, tgt_code)
                         )
@@ -736,8 +781,11 @@ async def dub_translate(req: TranslateRequest):
                             last_err = "empty Cantonese rewrite response"
                         else:
                             out_text, was_realized, needs_rewrite = _realize_cantonese_text_for_target(out_text, tgt_code)
+                            if needs_rewrite:
+                                best_effort_cantonese = out_text
+                                best_effort_was_realized = was_realized
                             guard_err = (
-                                "Cantonese output needs whole-sentence spoken Hong Kong rewrite"
+                                CANTONESE_REWRITE_REQUIRED
                                 if needs_rewrite
                                 else _translation_guard_error(out_text, tgt_code)
                             )
@@ -751,6 +799,16 @@ async def dub_translate(req: TranslateRequest):
                     except Exception as e:
                         last_err = f"{type(e).__name__}: {e}"
                         logger.warning("translate %s: LLM Cantonese rewrite failed: %s", seg.id, e)
+                if (
+                    _is_cantonese_rewrite_required_error(last_err)
+                    and best_effort_cantonese
+                    and is_cantonese_target(tgt_code)
+                ):
+                    return _cantonese_rewrite_warning_row(
+                        seg.id,
+                        best_effort_cantonese,
+                        best_effort_was_realized,
+                    )
                 # Both attempts failed — keep source text + flag error so the
                 # frontend can surface "fallback to literal" warning.
                 return {"id": seg.id, "text": seg.text, "error": last_err or "llm-failed"}

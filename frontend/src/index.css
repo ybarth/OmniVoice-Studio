@@ -2684,7 +2684,7 @@ html[data-iphone="true"] body {
   }
 
   .vox-shell .rail-btn:first-child {
-    flex-grow: 1.35;
+    flex-grow: 1.45;
   }
 
   .vox-shell .rail-btn.active::before {
@@ -2708,6 +2708,21 @@ html[data-iphone="true"] body {
     text-overflow: ellipsis;
     font-size: 9px;
     color: currentColor;
+  }
+
+  @media (max-width: 340px) {
+    .vox-shell .nav-rail {
+      padding-left: 8px;
+      padding-right: 8px;
+    }
+
+    .vox-shell .nav-rail .rail-top {
+      gap: 3px;
+    }
+
+    .vox-shell .rail-btn .rail-label {
+      font-size: 8px;
+    }
   }
 
   .vox-shell .header-area {

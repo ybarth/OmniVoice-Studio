@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
-  Search, FolderOpen, Fingerprint, Wand2, Music, Download,
+  Search, FolderOpen, Fingerprint, Wand2, Music, Download, Clock,
   LayoutGrid, List as ListIcon,
 } from 'lucide-react';
 import './Projects.css';

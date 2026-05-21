@@ -244,3 +244,139 @@
 .projects__content--list .projects__card-head { flex-shrink: 0; width: 110px; }
 .projects__content--list .projects__card-title { flex: 1; }
 .projects__content--list .projects__card-sub   { flex-shrink: 0; width: 120px; }
+
+@media (max-width: 760px) {
+  .projects {
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+  }
+
+  .projects__header {
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .projects__title {
+    flex: 1 1 100%;
+  }
+
+  .projects__toolbar {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .projects__search {
+    max-width: none;
+    min-width: 0;
+  }
+
+  .projects__search input {
+    font-size: 1rem;
+  }
+
+  .projects__body {
+    display: flex;
+    flex-direction: column;
+    min-height: auto;
+  }
+
+  .projects__rail,
+  .vox-shell .projects__rail {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    padding: 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--chrome-border);
+    overflow: visible;
+  }
+
+  .projects__rail-item,
+  .vox-shell .projects__rail-item {
+    width: 100%;
+    min-width: 0;
+    height: 44px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .projects__rail-item span:first-of-type {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .projects__content {
+    min-width: 0;
+    padding: 10px 8px;
+    overflow: visible;
+  }
+
+  .projects__content--grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .projects__card,
+  .projects__card-head,
+  .projects__card-title,
+  .projects__card-sub {
+    min-width: 0;
+  }
+
+  .projects__card {
+    border-radius: 8px;
+  }
+
+  .projects__card-kind,
+  .projects__card-trailing {
+    min-width: 0;
+  }
+
+  .projects__card-trailing {
+    flex-shrink: 0;
+  }
+
+  .projects__content--list .projects__card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 4px;
+    padding: 10px 12px;
+  }
+
+  .projects__content--list .projects__card-head,
+  .projects__content--list .projects__card-title,
+  .projects__content--list .projects__card-sub {
+    width: auto;
+  }
+}
+
+@media (max-width: 340px) {
+  .projects__header {
+    padding: 8px;
+  }
+
+  .projects__toolbar {
+    gap: 6px;
+  }
+
+  .projects__search {
+    padding: 0 8px;
+  }
+
+  .projects__rail {
+    padding: 8px;
+    gap: 6px;
+  }
+
+  .projects__rail-item,
+  .vox-shell .projects__rail-item {
+    gap: 6px;
+    padding: 0 8px;
+    font-size: 11px;
+  }
+}

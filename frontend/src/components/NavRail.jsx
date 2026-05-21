@@ -1,22 +1,13 @@
 import React from 'react';
 import {
-  Globe, Fingerprint, Wand2, Film, FolderOpen, Settings2, ArrowLeftRight,
-  Library, FileText, BookOpen, MessagesSquare,
+  Fingerprint, Wand2, FolderOpen, Settings2,
 } from 'lucide-react';
 
 const ITEMS = [
-  { id: 'launchpad', label: 'Launchpad', Icon: Globe,       accent: '#f3a5b6' },
-  { id: 'clone',     label: 'Clone',     Icon: Fingerprint, accent: '#d3869b' },
-  { id: 'conversation', label: 'Conversation', Icon: MessagesSquare, accent: '#8ec07c' },
-  { id: 'design',    label: 'Design',    Icon: Wand2,       accent: '#8ec07c' },
-  { id: 'dub',       label: 'Dub',       Icon: Film,        accent: '#fe8019' },
-  { id: 'stories',   label: 'Stories',   Icon: BookOpen,    accent: '#fabd2f' },
-  { id: 'gallery',   label: 'Gallery',   Icon: Library,     accent: '#b8bb26' },
-  { id: 'transcriptions', label: 'Transcripts', Icon: FileText, accent: '#d3869b' },
-  { id: 'projects',  label: 'OmniDrive',  Icon: FolderOpen,  accent: '#83a598' },
-];
-const FOOTER_ITEMS = [
-  { id: 'settings', label: 'Settings', Icon: Settings2, accent: '#fabd2f' },
+  { id: 'clone',    label: 'Clone',    Icon: Fingerprint, accent: '#c65f4a' },
+  { id: 'design',   label: 'Design',   Icon: Wand2,       accent: '#2b8f83' },
+  { id: 'projects', label: 'Drive',    Icon: FolderOpen,  accent: '#2f67b1' },
+  { id: 'settings', label: 'Settings', Icon: Settings2,   accent: '#c28b2c' },
 ];
 
 function RailBtn({ active, Icon, label, accent, onClick }) {
@@ -34,26 +25,18 @@ function RailBtn({ active, Icon, label, accent, onClick }) {
   );
 }
 
-export default function NavRail({ mode, setMode, side = 'left', onFlipSide }) {
+export default function NavRail({ mode, setMode }) {
   return (
-    <aside className={`nav-rail rail-${side}`}>
+    <aside className="nav-rail" aria-label="Primary">
+      <div className="rail-brand" aria-hidden="true">
+        <span className="rail-brand__stone rail-brand__stone--one" />
+        <span className="rail-brand__stone rail-brand__stone--two" />
+        <span className="rail-brand__stone rail-brand__stone--three" />
+      </div>
       <div className="rail-top">
         {ITEMS.map((it) => (
           <RailBtn key={it.id} {...it} active={mode === it.id} onClick={() => setMode(it.id)} />
         ))}
-      </div>
-      <div className="rail-bottom">
-        {FOOTER_ITEMS.map((it) => (
-          <RailBtn key={it.id} {...it} active={mode === it.id} onClick={() => setMode(it.id)} />
-        ))}
-        <button
-          onClick={onFlipSide}
-          title={`Move rail to the ${side === 'left' ? 'right' : 'left'}`}
-          aria-label="Flip rail side"
-          className="rail-btn rail-flip"
-        >
-          <ArrowLeftRight size={15} />
-        </button>
       </div>
     </aside>
   );

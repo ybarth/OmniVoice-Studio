@@ -8,22 +8,15 @@
  * through the whole tree.
  *
  * Persisted: mode (the tab you were on), isSidebarCollapsed, uiScale. The
- * active-project / active-voice ids are transient — on reload we snap back
- * to the launchpad rather than half-load a stale project state.
+ * active-project / active-voice ids are transient. This focused shell opens
+ * to Clone by default; older persisted modes are normalized in App.jsx.
  */
 import type { StateCreator } from 'zustand';
 
 export type AppMode =
-  | 'launchpad'
-  | 'generate'
-  | 'dub'
   | 'clone'
-  | 'conversation'
   | 'design'
-  | 'stories'
-  | 'voice'
-  | 'tools'
-  | 'batch'
+  | 'projects'
   | 'settings';
 
 export type SidebarTab = 'projects' | 'history' | 'downloads';
@@ -58,7 +51,7 @@ export interface UiSlice {
 }
 
 export const createUiSlice: StateCreator<UiSlice, [], [], UiSlice> = (set, get) => ({
-  mode: 'launchpad',
+  mode: 'clone',
   activeProjectId: null,
   activeProjectName: '',
   activeVoiceId: null,
@@ -84,15 +77,15 @@ export const createUiSlice: StateCreator<UiSlice, [], [], UiSlice> = (set, get) 
   openVoiceProfile: (id) => {
     const prev = get().mode;
     set({
-      mode: 'voice',
+      mode: 'clone',
       activeVoiceId: id,
-      modeBeforeVoice: prev !== 'voice' ? prev : get().modeBeforeVoice,
+      modeBeforeVoice: prev,
     });
   },
   closeVoiceProfile: () => {
     const prev = get().modeBeforeVoice;
     set({
-      mode: prev ?? 'launchpad',
+      mode: prev ?? 'clone',
       activeVoiceId: null,
       modeBeforeVoice: null,
     });

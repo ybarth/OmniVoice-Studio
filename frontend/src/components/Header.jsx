@@ -1,19 +1,13 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Globe, Fingerprint, Wand2, Film, FolderOpen, RefreshCw, Settings2, ChevronRight, ChevronDown, Zap, Building2, Library, FileText, Trash2 } from 'lucide-react';
+import { Fingerprint, Wand2, FolderOpen, RefreshCw, Settings2, ChevronRight, ChevronDown, Zap, Trash2, Landmark } from 'lucide-react';
 import { Button, Badge } from '../ui';
-import NotificationPanel from './NotificationPanel';
 
 const VIEW_META = {
-  launchpad:  { label: 'Launchpad',       Icon: Globe,       accent: '#f3a5b6', kicker: 'Studio' },
-  clone:      { label: 'Voice Clone',     Icon: Fingerprint, accent: '#d3869b', kicker: 'Studio' },
-  design:     { label: 'Voice Design',    Icon: Wand2,       accent: '#8ec07c', kicker: 'Studio' },
-  dub:        { label: 'Dubbing',         Icon: Film,        accent: '#fe8019', kicker: 'Studio' },
-  projects:   { label: 'OmniDrive',      Icon: FolderOpen,  accent: '#83a598', kicker: 'Library' },
-  gallery:    { label: 'Gallery',         Icon: Library,     accent: '#b8bb26', kicker: 'Library' },
-  transcriptions: { label: 'Transcriptions', Icon: FileText, accent: '#d3869b', kicker: 'Library' },
-  settings:   { label: 'Settings',        Icon: Settings2,   accent: '#fabd2f', kicker: 'Preferences' },
-  enterprise: { label: 'Commercial License', Icon: Building2, accent: '#fe8019', kicker: 'Licensing' },
+  clone:    { label: 'Voice Clone',  Icon: Fingerprint, accent: '#c65f4a', kicker: 'Studio' },
+  design:   { label: 'Voice Design', Icon: Wand2,       accent: '#2b8f83', kicker: 'Studio' },
+  projects: { label: 'Drive',        Icon: FolderOpen,  accent: '#2f67b1', kicker: 'Library' },
+  settings: { label: 'Settings',     Icon: Settings2,   accent: '#c28b2c', kicker: 'System' },
 };
 
 function WaveBars({ color = '#f3a5b6', active }) {
@@ -38,8 +32,8 @@ function WaveBars({ color = '#f3a5b6', active }) {
 }
 
 export default function Header({
-  mode, setMode, sysStats, modelStatus, doubleClickMaximize,
-  activeProjectName, onFlushMemory,
+  mode, sysStats, modelStatus, doubleClickMaximize,
+  activeProjectName, onFlushMemory, device,
 }) {
   const [flushing, setFlushing] = useState(false);
   const [flushOpen, setFlushOpen] = useState(false);
@@ -83,7 +77,7 @@ export default function Header({
       window.removeEventListener('scroll', computePos, true);
     };
   }, [flushOpen, computePos]);
-  const view = VIEW_META[mode] || VIEW_META.launchpad;
+  const view = VIEW_META[mode] || VIEW_META.clone;
   const ViewIcon = view.Icon;
 
   // Fetch loaded models when dropdown opens
@@ -170,22 +164,27 @@ export default function Header({
 
       {/* Center: logo */}
       <div className="hq-col-center">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f3a5b6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="hq-logo-mark">
-          <circle cx="12" cy="12" r="10" opacity="0.18" fill="#f3a5b6" />
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 6v12" />
-          <path d="M8 9v6" />
-          <path d="M16 9v6" />
+        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 32 32" fill="none" className="hq-logo-mark" aria-hidden="true">
+          <path d="M6 25h20" stroke="#f5efe2" strokeWidth="1.5" strokeLinecap="round" opacity="0.72" />
+          <path d="M9 25V12l7-5 7 5v13" stroke="#f5efe2" strokeWidth="1.7" strokeLinejoin="round" />
+          <path d="M12 23V14h3v9M17 23V14h3v9" stroke="#2b8f83" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M10.5 17.5h11M10.5 20.5h11" stroke="#c28b2c" strokeWidth="1.2" strokeLinecap="round" />
+          <path d="M9 12c3 2.8 11 2.8 14 0" stroke="#c65f4a" strokeWidth="1.5" strokeLinecap="round" />
         </svg>
         <span className="hq-logo-word">
-          Omni<span className="hq-logo-word__accent">Voice</span>
+          Vox<span className="hq-logo-word__accent">Tower</span>
         </span>
+        <span className="hq-logo-kicker"><Landmark size={10} /> Concord</span>
       </div>
 
       {/* Right: wave + sys stats. UI scale (S/M/L) lives in the bottom
           LogsFooter bar so all app-wide chrome sits together. */}
       <div className="hq-col-right">
-        <NotificationPanel onNavigate={setMode} />
+        {device && (
+          <Badge tone={device.isIPhone ? 'info' : 'neutral'} size="xs" className="hq-device-badge">
+            {device.isIPhone ? 'iPhone mode' : device.kind}
+          </Badge>
+        )}
         <WaveBars color={view.accent} active={modelStatus === 'ready' || modelStatus === 'loading'} />
         {sysStats && (
           <div className="hq-stats">

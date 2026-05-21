@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const setupPath = new URL('../../frontend/src/api/setup.ts', import.meta.url).pathname;
+const setupPath = fileURLToPath(new URL('../../frontend/src/api/setup.ts', import.meta.url));
 const clientUrl = new URL('../../frontend/src/api/client.ts', import.meta.url).href;
 const tmpDir = mkdtempSync(path.join(tmpdir(), 'omnivoice-setup-api-'));
 const tmpSetup = path.join(tmpDir, 'setup.ts');

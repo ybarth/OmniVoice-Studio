@@ -22,7 +22,15 @@ export default defineConfig({
   server: {
     port: 3901,
     strictPort: true,
-    host: false,
+    host: '0.0.0.0',
+    allowedHosts: true,
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:3900',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/api/, ''),
+      },
+    },
     watch: {
       ignored: ["**/src-tauri/**"],
     },
@@ -35,4 +43,3 @@ export default defineConfig({
     css: false,
   },
 })
-

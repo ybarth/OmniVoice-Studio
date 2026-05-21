@@ -56,7 +56,7 @@
 .errbnd-title {
   font-family: var(--font-serif); font-style: italic;
   font-size: 1.6rem; font-weight: 400;
-  color: var(--chrome-fg); margin: 0 0 6px; letter-spacing: -0.01em;
+  color: var(--chrome-fg); margin: 0 0 6px; letter-spacing: 0;
 }
 .errbnd-desc {
   color: var(--chrome-fg-muted); font-size: 0.82rem;

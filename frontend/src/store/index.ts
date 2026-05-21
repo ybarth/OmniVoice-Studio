@@ -31,10 +31,11 @@ import type { PillSlice } from './pillSlice';
 import { createPillSlice } from './pillSlice';
 import type { ConversationSlice } from './conversationSlice';
 import { createConversationSlice } from './conversationSlice';
+import type { ConversationTurn } from '../utils/conversationSession';
 
 export type AppStore = PrefsSlice & GlossarySlice & UiSlice & DubSlice & GenerateSlice & PillSlice & ConversationSlice;
 
-function stripVolatileConversationAudio(turns = []) {
+function stripVolatileConversationAudio(turns: ConversationTurn[] = []): ConversationTurn[] {
   return turns.map(turn => ({
     ...turn,
     sourceAudioUrl: turn.sourceAudioUrl?.startsWith?.('blob:') ? '' : turn.sourceAudioUrl,

@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const translatePath = new URL('../../frontend/src/api/translate.ts', import.meta.url).pathname;
+const translatePath = fileURLToPath(new URL('../../frontend/src/api/translate.ts', import.meta.url));
 const clientUrl = new URL('../../frontend/src/api/client.ts', import.meta.url).href;
 const promptUtilsUrl = new URL('../../frontend/src/utils/promptTranslation.ts', import.meta.url).href;
 const translateSrc = await readFile(translatePath, 'utf8');

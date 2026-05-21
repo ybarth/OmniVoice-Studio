@@ -69,7 +69,7 @@
   font-family: var(--font-serif);
   font-size: 2.0rem;
   font-weight: 400;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   color: var(--chrome-fg);
   margin: 0;
   position: relative;

@@ -5,7 +5,7 @@ describe('Zustand store', () => {
   it('useAppStore initialises with default mode', async () => {
     const { useAppStore } = await import('../store');
     const { result } = renderHook(() => useAppStore(s => s.mode));
-    // Default mode should be a string (launchpad, design, clone, or dub)
+    // Default mode should be one of the focused shell modes.
     expect(typeof result.current).toBe('string');
     expect(result.current.length).toBeGreaterThan(0);
   });
@@ -16,9 +16,9 @@ describe('Zustand store', () => {
       mode: useAppStore(s => s.mode),
       setMode: useAppStore(s => s.setMode),
     }));
-    result.current.setMode('dub');
+    result.current.setMode('design');
     rerender();
-    expect(result.current.mode).toBe('dub');
+    expect(result.current.mode).toBe('design');
   });
 
   it('setText updates text', async () => {

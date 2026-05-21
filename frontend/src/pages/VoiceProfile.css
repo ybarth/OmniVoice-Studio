@@ -90,7 +90,7 @@
   font-family: var(--font-display);
   font-size: var(--text-2xl);
   font-weight: var(--weight-bold);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   color: var(--color-fg);
 }
 .voice-profile__badges {

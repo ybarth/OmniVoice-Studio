@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
-  Search, FolderOpen, Film, Fingerprint, Wand2, Music, Download,
-  LayoutGrid, List as ListIcon, Clock, FileText, Mic,
+  Search, FolderOpen, Fingerprint, Wand2, Music, Download,
+  LayoutGrid, List as ListIcon,
 } from 'lucide-react';
 import './Projects.css';
 
@@ -26,9 +26,7 @@ import './Projects.css';
 
 const FILTERS = [
   { id: 'all',      label: 'All',            Icon: FolderOpen  },
-  { id: 'dubs',     label: 'Dub Projects',   Icon: Film        },
   { id: 'profiles', label: 'Voice Profiles', Icon: Fingerprint },
-  { id: 'transcripts', label: 'Transcripts', Icon: Mic         },
   { id: 'history',  label: 'History',        Icon: Music       },
   { id: 'exports',  label: 'Exports',        Icon: Download    },
 ];
@@ -43,16 +41,6 @@ function fmtTime(ts) {
   if (s < 3600)   return `${Math.floor(s / 60)}m ago`;
   if (s < 86400)  return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
-}
-
-function fmtDuration(sec) {
-  if (!sec) return '';
-  const n = Number(sec);
-  if (!Number.isFinite(n)) return '';
-  if (n < 60) return `${Math.floor(n)}s`;
-  const m = Math.floor(n / 60);
-  const s = Math.floor(n % 60);
-  return `${m}m ${s}s`;
 }
 
 function Card({ kind, accent, title, subtitle, trailing, onClick, IconC }) {
@@ -77,11 +65,9 @@ function Card({ kind, accent, title, subtitle, trailing, onClick, IconC }) {
 }
 
 export default function Projects({
-  studioProjects = [],
   profiles = [],
   history = [],
   exportHistory = [],
-  onOpenDub,           // (projectId) => void — loads project + switches to dub mode
   onOpenProfile,       // (voiceId)   => void
   onRevealExport,      // (path)      => void
 }) {
@@ -89,37 +75,10 @@ export default function Projects({
   const [query, setQuery]     = useState('');
   const [view, setView]       = useState('grid');  // grid | list
 
-  // Load transcriptions from localStorage (same source as TranscriptionsPage)
-  const [transcriptions, setTranscriptions] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('omni_transcriptions') || '[]'); }
-    catch { return []; }
-  });
-  // Listen for new transcriptions
-  React.useEffect(() => {
-    const handler = () => {
-      try { setTranscriptions(JSON.parse(localStorage.getItem('omni_transcriptions') || '[]')); }
-      catch {}
-    };
-    window.addEventListener('omni:transcription-added', handler);
-    return () => window.removeEventListener('omni:transcription-added', handler);
-  }, []);
-
   // Normalise every source into a common shape so the filter + search +
   // sort pipeline is identical regardless of origin.
   const items = useMemo(() => {
     const list = [];
-    for (const p of studioProjects) {
-      list.push({
-        type: 'dubs',
-        id: p.id,
-        title: p.name || p.video_path?.split('/').pop() || p.id,
-        subtitle: fmtDuration(p.duration),
-        ts: (p.updated_at || p.created_at || 0) * 1000,
-        accent: '#fe8019',
-        Icon: Film,
-        onClick: () => onOpenDub?.(p.id),
-      });
-    }
     for (const pr of profiles) {
       const kind = pr.kind || 'clone';
       list.push({
@@ -157,23 +116,9 @@ export default function Projects({
         onClick: () => e.path && onRevealExport?.(e.path),
       });
     }
-    for (const t of transcriptions) {
-      list.push({
-        type: 'transcripts',
-        id: t.id || String(Math.random()),
-        title: (t.text || 'Transcription').slice(0, 120),
-        subtitle: [t.language, t.duration_s ? `${Math.round(t.duration_s)}s` : ''].filter(Boolean).join(' · '),
-        ts: t.timestamp ? Date.parse(t.timestamp) : 0,
-        accent: '#83a598',
-        Icon: FileText,
-        onClick: () => {
-          navigator.clipboard.writeText(t.text || '');
-        },
-      });
-    }
     list.sort((a, b) => (b.ts || 0) - (a.ts || 0));
     return list;
-  }, [studioProjects, profiles, history, exportHistory, transcriptions, onOpenDub, onOpenProfile, onRevealExport]);
+  }, [profiles, history, exportHistory, onOpenProfile, onRevealExport]);
 
   const counts = useMemo(() => {
     const c = { all: items.length };
@@ -193,14 +138,14 @@ export default function Projects({
   return (
     <div className="projects">
       <div className="projects__header">
-        <h1 className="projects__title">OmniDrive</h1>
+        <h1 className="projects__title">Drive</h1>
         <div className="projects__toolbar">
           <div className="projects__search">
             <Search size={12} />
             <input
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Search dubs, clones, transcripts, exports…"
+              placeholder="Search voices, generations, exports..."
               spellCheck={false}
             />
           </div>
@@ -249,7 +194,7 @@ export default function Projects({
           {visible.length === 0 && (
             <div className="projects__empty">
               <FolderOpen size={28} />
-              <p>{query ? `No matches for “${query}”` : 'Nothing here yet. Start a dub, design a voice, or generate audio to see it appear.'}</p>
+              <p>{query ? `No matches for "${query}"` : 'Nothing here yet. Clone or design a voice to see local work appear.'}</p>
             </div>
           )}
           {visible.map(it => (

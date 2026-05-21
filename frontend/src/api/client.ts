@@ -1,8 +1,27 @@
-// Backend base URL. Configurable via VITE_API_URL or VITE_API_PORT env vars.
-// In production Tauri builds, the webview talks to the sidecar on localhost.
 const viteEnv = import.meta.env ?? {};
 const _port = viteEnv.VITE_API_PORT || '3900';
-export const API = viteEnv.VITE_API_URL || `http://127.0.0.1:${_port}`;
+
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === 'localhost'
+    || hostname === '127.0.0.1'
+    || hostname === '::1'
+    || hostname.endsWith('.localhost');
+}
+
+function defaultApiBase(): string {
+  if (viteEnv.VITE_API_URL) return viteEnv.VITE_API_URL;
+  if (typeof window !== 'undefined') {
+    const { hostname, origin, protocol } = window.location;
+    const isWebPreview = protocol.startsWith('http') && !isLoopbackHost(hostname);
+    if (isWebPreview) return `${origin}/api`;
+  }
+  return `http://127.0.0.1:${_port}`;
+}
+
+// Backend base URL. Local desktop/web builds talk to the sidecar directly.
+// Public tunnel previews use Vite's same-origin /api proxy so phones do not
+// accidentally call their own 127.0.0.1.
+export const API = defaultApiBase();
 
 export class ApiError extends Error {
   status?: number;

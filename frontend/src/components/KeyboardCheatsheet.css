@@ -20,7 +20,7 @@
 .kcs-title {
   margin: 0; font-family: var(--font-serif); font-style: italic;
   font-weight: 400; font-size: 1.5rem; color: var(--chrome-fg);
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 .kcs-close {
   background: none; border: none; color: var(--chrome-fg-muted); cursor: pointer;

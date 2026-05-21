@@ -47,7 +47,7 @@
   font-family: var(--font-serif);
   font-size: 2.4rem;
   font-weight: 400;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   color: var(--chrome-fg);
   margin: 10px 0 0;
   position: relative;

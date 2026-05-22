@@ -1,12 +1,13 @@
 import React from 'react';
 import {
   Globe, Fingerprint, Wand2, Film, FolderOpen, Settings2, ArrowLeftRight,
-  Library, FileText, BookOpen,
+  Library, FileText, BookOpen, MessagesSquare,
 } from 'lucide-react';
 
 const ITEMS = [
   { id: 'launchpad', label: 'Launchpad', Icon: Globe,       accent: '#f3a5b6' },
   { id: 'clone',     label: 'Clone',     Icon: Fingerprint, accent: '#d3869b' },
+  { id: 'conversation', label: 'Conversation', Icon: MessagesSquare, accent: '#8ec07c' },
   { id: 'design',    label: 'Design',    Icon: Wand2,       accent: '#8ec07c' },
   { id: 'dub',       label: 'Dub',       Icon: Film,        accent: '#fe8019' },
   { id: 'stories',   label: 'Stories',   Icon: BookOpen,    accent: '#fabd2f' },

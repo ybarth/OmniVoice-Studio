@@ -1,11 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { X, Loader } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { useAppStore } from '../store';
 import './CaptureWidget.css';
 
 import { API as API_BASE } from '../api/client';
+import { transcribeAudio } from '../api/capture';
 import { addTranscription } from '../pages/Transcriptions';
+import {
+  buildDictationFormData,
+  DEFAULT_DICTATION_BACKEND,
+  readDictationSettings,
+} from '../utils/dictationSettings';
 
 // Flip the system tray icon between default and red-dot. No-op when not
 // running inside the Tauri shell (e.g. browser webui, Docker).
@@ -15,8 +20,6 @@ async function setTrayRecording(recording) {
     await invoke('set_tray_recording', { recording });
   } catch { /* not in Tauri */ }
 }
-
-const LS_CAPTURE_MODE = 'omni_capture_mode';
 
 function formatElapsed(ms) {
   const secs = Math.floor(ms / 1000);
@@ -37,9 +40,6 @@ export default function CaptureWidget({ onDismiss }) {
   const [state, setState] = useState('idle'); // idle | recording | transcribing | done | error
   const [transcript, setTranscript] = useState('');
   const [duration, setDuration] = useState(0);
-  const [captureMode] = useState(() =>
-    localStorage.getItem(LS_CAPTURE_MODE) || 'fast'
-  );
   const [lastEngine, setLastEngine] = useState('');
   const [lastTime, setLastTime] = useState(0);
   const [partialText, setPartialText] = useState('');
@@ -53,6 +53,7 @@ export default function CaptureWidget({ onDismiss }) {
   const wsHadFinalRef = useRef(false);
   const fallbackTimerRef = useRef(null);
   const startTimeRef = useRef(0);
+  const dictationSettingsRef = useRef(readDictationSettings());
 
   // ── Hold-to-talk: listen for tray-dictate (start) and tray-dictate-stop (release) ──
   useEffect(() => {
@@ -156,6 +157,7 @@ export default function CaptureWidget({ onDismiss }) {
         audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 16000 }
       });
       streamRef.current = stream;
+      dictationSettingsRef.current = readDictationSettings();
       chunksRef.current = [];
       wsPendingRef.current = [];
       wsHadFinalRef.current = false;
@@ -168,62 +170,65 @@ export default function CaptureWidget({ onDismiss }) {
         ? 'audio/webm;codecs=opus'
         : 'audio/webm';
 
-      // Open WebSocket BEFORE starting recorder
-      try {
-        const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-        const wsHost = API_BASE.replace(/^https?:\/\//, '').replace(/\/$/, '')
-          || `${window.location.hostname}:3900`;
-        const wsUrl = `${wsProto}://${wsHost}/ws/transcribe`;
-        const ws = new WebSocket(wsUrl);
-        ws.binaryType = 'arraybuffer';
-        ws.onopen = () => {
-          for (const buf of wsPendingRef.current) {
-            try { ws.send(buf); } catch {}
-          }
-          wsPendingRef.current = [];
-        };
-        ws.onmessage = (evt) => {
-          try {
-            const msg = JSON.parse(evt.data);
-            if (msg.type === 'partial') {
-              setPartialText(msg.text || '');
-            } else if (msg.type === 'final') {
-              wsHadFinalRef.current = true;
-              if (fallbackTimerRef.current) {
-                clearTimeout(fallbackTimerRef.current);
-                fallbackTimerRef.current = null;
-              }
-              applyResult(msg);
-              try { ws.close(); } catch {}
-            } else if (msg.type === 'error') {
-              if (fallbackTimerRef.current) {
-                clearTimeout(fallbackTimerRef.current);
-                fallbackTimerRef.current = null;
-              }
-              try { ws.close(); } catch {}
-              wsRef.current = null;
-              if (!wsHadFinalRef.current) sendForTranscription();
+      // Stream only when using the auto capture engine. Explicit Parakeet /
+      // Whisper selections must be honored by the POST fallback below.
+      if (dictationSettingsRef.current.backend === DEFAULT_DICTATION_BACKEND) {
+        try {
+          const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+          const wsHost = API_BASE.replace(/^https?:\/\//, '').replace(/\/$/, '')
+            || `${window.location.hostname}:3900`;
+          const wsUrl = `${wsProto}://${wsHost}/ws/transcribe`;
+          const ws = new WebSocket(wsUrl);
+          ws.binaryType = 'arraybuffer';
+          ws.onopen = () => {
+            for (const buf of wsPendingRef.current) {
+              try { ws.send(buf); } catch {}
             }
-          } catch {}
-        };
-        ws.onerror = () => { wsRef.current = null; };
-        ws.onclose = () => {
+            wsPendingRef.current = [];
+          };
+          ws.onmessage = (evt) => {
+            try {
+              const msg = JSON.parse(evt.data);
+              if (msg.type === 'partial') {
+                setPartialText(msg.text || '');
+              } else if (msg.type === 'final') {
+                wsHadFinalRef.current = true;
+                if (fallbackTimerRef.current) {
+                  clearTimeout(fallbackTimerRef.current);
+                  fallbackTimerRef.current = null;
+                }
+                applyResult(msg);
+                try { ws.close(); } catch {}
+              } else if (msg.type === 'error') {
+                if (fallbackTimerRef.current) {
+                  clearTimeout(fallbackTimerRef.current);
+                  fallbackTimerRef.current = null;
+                }
+                try { ws.close(); } catch {}
+                wsRef.current = null;
+                if (!wsHadFinalRef.current) sendForTranscription();
+              }
+            } catch {}
+          };
+          ws.onerror = () => { wsRef.current = null; };
+          ws.onclose = () => {
+            wsRef.current = null;
+            if (
+              !wsHadFinalRef.current
+              && mediaRecorderRef.current
+              && mediaRecorderRef.current.state === 'inactive'
+            ) {
+              if (fallbackTimerRef.current) {
+                clearTimeout(fallbackTimerRef.current);
+                fallbackTimerRef.current = null;
+              }
+              sendForTranscription();
+            }
+          };
+          wsRef.current = ws;
+        } catch {
           wsRef.current = null;
-          if (
-            !wsHadFinalRef.current
-            && mediaRecorderRef.current
-            && mediaRecorderRef.current.state === 'inactive'
-          ) {
-            if (fallbackTimerRef.current) {
-              clearTimeout(fallbackTimerRef.current);
-              fallbackTimerRef.current = null;
-            }
-            sendForTranscription();
-          }
-        };
-        wsRef.current = ws;
-      } catch {
-        wsRef.current = null;
+        }
       }
 
       const recorder = new MediaRecorder(stream, { mimeType });
@@ -301,20 +306,15 @@ export default function CaptureWidget({ onDismiss }) {
     if (wsHadFinalRef.current) return;
 
     const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-    const formData = new FormData();
-    formData.append('audio', blob, 'capture.webm');
-    formData.append('mode', captureMode);
+    const settings = dictationSettingsRef.current || readDictationSettings();
+    const formData = buildDictationFormData(blob, {
+      filename: 'capture.webm',
+      mode: settings.mode,
+      backend: settings.backend,
+    });
 
     try {
-      const res = await fetch(`${API_BASE}/transcribe`, {
-        method: 'POST',
-        body: formData,
-      });
-      if (!res.ok) {
-        const detail = await res.json().catch(() => ({}));
-        throw new Error(detail.detail || `HTTP ${res.status}`);
-      }
-      const data = await res.json();
+      const data = await transcribeAudio(formData);
       if (wsHadFinalRef.current) return;
       await applyResult(data);
     } catch (err) {
@@ -323,7 +323,7 @@ export default function CaptureWidget({ onDismiss }) {
       setState('error');
       setTranscript('');
     }
-  }, [captureMode, applyResult]);
+  }, [applyResult]);
 
   const dismiss = async () => {
     setState('idle');

@@ -1,5 +1,31 @@
 export const DEFAULT_PEAK_BUCKETS = 8192;
 
+export function createAudioPreviewUrl(file, urlApi = URL) {
+  const url = urlApi.createObjectURL(file);
+  let revoked = false;
+  return {
+    url,
+    revoke: () => {
+      if (revoked) return;
+      revoked = true;
+      urlApi.revokeObjectURL(url);
+    },
+  };
+}
+
+export function shouldOpenSamplePreview(_durationSeconds, _maxSeconds) {
+  return true;
+}
+
+export function selectionPreviewCursor(selectionStart, previewCurrentTime, selectionEnd) {
+  const localTime = Number.isFinite(previewCurrentTime) ? Math.max(0, previewCurrentTime) : 0;
+  return clamp(selectionStart + localTime, selectionStart, selectionEnd);
+}
+
+export function shouldTrackPointerMove(dragState) {
+  return Boolean(dragState);
+}
+
 export function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
 }
@@ -189,4 +215,11 @@ export function sliceToMono(buffer, startSec, endSec) {
     for (let i = 0; i < len; i++) out[i] += d[s0 + i] / chCount;
   }
   return out;
+}
+
+export function createSelectionPreviewUrl(buffer, startSec, endSec, urlApi = URL) {
+  const mono = sliceToMono(buffer, startSec, endSec);
+  const wav = encodeWav(mono, buffer.sampleRate);
+  const blob = new Blob([wav], { type: 'audio/wav' });
+  return createAudioPreviewUrl(blob, urlApi);
 }

@@ -19,6 +19,7 @@ from services.audio_dsp import apply_mastering, normalize_audio
 from core import event_bus
 from core.text_fields import clean_instruct_text, clean_optional_text
 from services.cantonese_guard import (
+    apply_cantonese_pronunciation_guard,
     is_cantonese_target,
     normalize_tts_language,
     validate_spoken_cantonese_text,
@@ -216,6 +217,9 @@ async def generate_speech(
 
     if is_cantonese_target(language):
         _set_generation_status(request_id, "running", "validating", "Checking spoken Hong Kong Cantonese prompt", 15)
+        pronunciation_pass = apply_cantonese_pronunciation_guard(text)
+        if pronunciation_pass.changed:
+            text = pronunciation_pass.text
         ok, reason = validate_spoken_cantonese_text(text)
         if not ok:
             detail = (

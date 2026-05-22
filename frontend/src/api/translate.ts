@@ -29,6 +29,13 @@ export async function translatePromptForSynthesis(
   text: string,
   language: string,
   provider = 'google',
+  {
+    sourceLanguage = 'auto',
+    quality = 'fast',
+  }: {
+    sourceLanguage?: string;
+    quality?: 'fast' | 'cinematic' | string;
+  } = {},
 ): Promise<TranslatePromptResult> {
   const targetCode = languageLabelToCode(language);
   if (!targetCode) {
@@ -47,12 +54,13 @@ export async function translatePromptForSynthesis(
     return { text, translated: false, targetCode, skippedReason: 'no-translatable-text' };
   }
 
+  const sourceCode = sourceLanguage === 'auto' ? null : languageLabelToCode(sourceLanguage);
   const result = await apiPost<TranslateResponse>('/dub/translate', {
     segments,
     target_lang: targetCode,
-    source_lang: 'auto',
+    source_lang: sourceCode || 'auto',
     provider,
-    quality: 'fast',
+    quality,
   });
 
   const failed = result.translated?.find(row => row.error);

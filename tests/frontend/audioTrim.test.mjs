@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   clamp, encodeWav, computePeaksFromChannel, pickTickInterval,
   xToTime, pickHandle, applyDrag, zoomAtCursor, zoomCenter, sliceToMono,
+  createAudioPreviewUrl, shouldOpenSamplePreview, createSelectionPreviewUrl,
+  selectionPreviewCursor, shouldTrackPointerMove,
 } from '../../frontend/src/utils/audioTrim.js';
 
 test('clamp', () => {
@@ -180,6 +182,70 @@ test('sliceToMono handles mono buffer', () => {
   const slice = sliceToMono(buffer, 0.25, 0.5);
   assert.equal(slice.length, Math.floor(0.5 * sr) - Math.floor(0.25 * sr));
   assert.ok(Math.abs(slice[0] - 0.1) < 1e-6);
+});
+
+test('createAudioPreviewUrl creates a revocable source for trimmer playback', () => {
+  const calls = [];
+  const urlApi = {
+    createObjectURL: (file) => {
+      calls.push(['create', file.name]);
+      return `blob:test-${file.name}`;
+    },
+    revokeObjectURL: (url) => calls.push(['revoke', url]),
+  };
+  const file = { name: 'sample.wav' };
+
+  const preview = createAudioPreviewUrl(file, urlApi);
+
+  assert.equal(preview.url, 'blob:test-sample.wav');
+  preview.revoke();
+  assert.deepEqual(calls, [
+    ['create', 'sample.wav'],
+    ['revoke', 'blob:test-sample.wav'],
+  ]);
+});
+
+test('shouldOpenSamplePreview opens the preview screen for any clone sample', () => {
+  assert.equal(shouldOpenSamplePreview(3, 15), true);
+  assert.equal(shouldOpenSamplePreview(16, 15), true);
+  assert.equal(shouldOpenSamplePreview(null, 15), true);
+});
+
+test('createSelectionPreviewUrl builds audio from only the selected range', async () => {
+  const sr = 100;
+  const ch = new Float32Array(sr * 5);
+  ch.fill(0.25);
+  const buffer = { sampleRate: sr, numberOfChannels: 1, getChannelData: () => ch };
+  const calls = [];
+  const urlApi = {
+    createObjectURL: (blob) => {
+      calls.push(['create', blob.size]);
+      return 'blob:selected-range';
+    },
+    revokeObjectURL: (url) => calls.push(['revoke', url]),
+  };
+
+  const preview = createSelectionPreviewUrl(buffer, 1.5, 3.0, urlApi);
+
+  assert.equal(preview.url, 'blob:selected-range');
+  assert.deepEqual(calls, [['create', 44 + 150 * 2]]);
+  preview.revoke();
+  assert.deepEqual(calls, [
+    ['create', 44 + 150 * 2],
+    ['revoke', 'blob:selected-range'],
+  ]);
+});
+
+test('selectionPreviewCursor maps local clip playback onto the waveform timeline', () => {
+  assert.equal(selectionPreviewCursor(3, 0.5, 5), 3.5);
+  assert.equal(selectionPreviewCursor(3, 99, 5), 5);
+  assert.equal(selectionPreviewCursor(3, -1, 5), 3);
+});
+
+test('shouldTrackPointerMove ignores passive hover so playback owns the playhead', () => {
+  assert.equal(shouldTrackPointerMove(null), false);
+  assert.equal(shouldTrackPointerMove({ mode: 'new' }), true);
+  assert.equal(shouldTrackPointerMove({ mode: 'region' }), true);
 });
 
 test('applyDrag start cannot go below 0', () => {

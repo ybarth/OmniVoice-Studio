@@ -8,6 +8,7 @@ import DirectionDialog from './components/DirectionDialog';
 const AudioTrimmer = lazy(() => import('./components/AudioTrimmer'));
 const Launchpad = lazy(() => import('./pages/Launchpad'));
 const CloneDesignTab = lazy(() => import('./pages/CloneDesignTab'));
+const ConversationTab = lazy(() => import('./pages/ConversationTab'));
 const DubTab = lazy(() => import('./pages/DubTab'));
 const Sidebar = lazy(() => import('./components/Sidebar'));
 const CompareModal = lazy(() => import('./components/CompareModal'));
@@ -133,7 +134,7 @@ function App() {
   const closeVoiceProfile = useAppStore(s => s.closeVoiceProfile);
   const hideSidebar = mode === 'launchpad' || mode === 'settings' || mode === 'voice' || mode === 'donate'
     || mode === 'queue' || mode === 'tools' || mode === 'projects' || mode === 'gallery' || mode === 'enterprise' || mode === 'transcriptions'
-    || mode === 'stories';
+    || mode === 'stories' || mode === 'conversation';
   const availableSidebarTabs = mode === 'dub'
     ? ['projects', 'history', 'downloads']
     : (mode === 'clone' || mode === 'design')
@@ -191,6 +192,7 @@ function App() {
     voicePreviewProfileId, setVoicePreviewProfileId,
     handleSaveProfile: _handleSaveProfile,
     handleDeleteProfile, handleSelectProfile,
+    handleRenameProfile, handleUploadProfilePhoto,
     handlePreviewVoice, handleSegmentPreview,
     handleSaveHistoryAsProfile, handleLockProfile, handleUnlockProfile,
   } = useProfiles({ loadHistory, loadProfiles });
@@ -1022,6 +1024,15 @@ function App() {
             />
           </Suspense>
           </ErrorBoundary>
+        ) : mode === 'conversation' ? (
+          <ErrorBoundary name="conversation">
+          <Suspense fallback={<LazyFallback />}>
+            <ConversationTab
+              profiles={profiles}
+              loadHistory={loadHistory}
+            />
+          </Suspense>
+          </ErrorBoundary>
         ) : (
           <ErrorBoundary name="clone-design">
           <Suspense fallback={<LazyFallback />}>
@@ -1057,6 +1068,8 @@ function App() {
               applyPreset={applyPreset} insertTag={insertTag}
               handleSelectProfile={handleSelectProfile}
               handleDeleteProfile={handleDeleteProfile}
+              handleRenameProfile={handleRenameProfile}
+              handleUploadProfilePhoto={handleUploadProfilePhoto}
               handleSaveProfile={handleSaveProfile}
               handleGenerate={handleGenerate}
               startRecording={startRecording} stopRecording={stopRecording}

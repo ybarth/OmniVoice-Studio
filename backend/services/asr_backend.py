@@ -768,6 +768,11 @@ def active_backend_id() -> str:
 
 def get_active_asr_backend(*, asr_pipe=None) -> ASRBackend:
     bid = active_backend_id()
+    return get_asr_backend_by_id(bid, asr_pipe=asr_pipe)
+
+
+def get_asr_backend_by_id(backend_id: str, *, asr_pipe=None) -> ASRBackend:
+    bid = (backend_id or "").strip()
     if bid == "pytorch-whisper":
         return PyTorchWhisperBackend(asr_pipe=asr_pipe)
     if bid == "mlx-whisper":

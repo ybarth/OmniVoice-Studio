@@ -223,6 +223,7 @@ from api.routers import (
     tts_stream,
     marketplace,
     sonitranslate,
+    conversation,
 )
 from utils import hf_progress
 
@@ -390,7 +391,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Content-Disposition"],
+    expose_headers=["Content-Disposition", "X-Audio-Id", "X-Audio-Path", "X-Audio-Duration"],
 )
 
 app.mount("/audio", StaticFiles(directory=OUTPUTS_DIR), name="audio")
@@ -435,6 +436,7 @@ app.include_router(openai_compat.router)
 app.include_router(tts_stream.router)
 app.include_router(marketplace.router)
 app.include_router(sonitranslate.router)
+app.include_router(conversation.router)
 
 frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
 if os.path.exists(frontend_path):

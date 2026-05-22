@@ -153,6 +153,40 @@ def test_clone_generation_normalizes_cantonese_language_for_tts(monkeypatch):
     }
 
 
+def test_clone_generation_applies_cantonese_tts_pronunciation_guard(monkeypatch):
+    from main import app
+    from api.routers import generation
+
+    async def fake_get_model():
+        return object()
+
+    def capture_text(
+        model, text, language, ref_audio_path, ref_text, instruct, duration,
+        *args,
+    ):
+        raise HTTPException(status_code=418, detail={"language": language, "text": text})
+
+    monkeypatch.setattr(generation, "get_model", fake_get_model)
+    monkeypatch.setattr(generation, "_run_inference", capture_text)
+
+    client = TestClient(app, client=("127.0.0.1", 50000))
+    res = client.post(
+        "/generate",
+        data={
+            "text": "這樣可以嗎？",
+            "language": "Cantonese",
+            "ref_text": "This is the exact recording transcript.",
+        },
+        files={"ref_audio": ("sample.wav", make_wav_bytes(), "audio/wav")},
+    )
+
+    assert res.status_code == 418
+    assert res.json()["detail"] == {
+        "language": "yue",
+        "text": "咁樣得唔得？",
+    }
+
+
 def test_clone_generation_blocks_mandarin_like_text_for_cantonese_tts(monkeypatch):
     from main import app
     from api.routers import generation

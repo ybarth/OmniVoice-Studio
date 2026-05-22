@@ -6,6 +6,7 @@ import { buildPromptTranslationReceipt, shouldTranslateBeforeSynthesis } from '.
 import { playBlobAudio, playPing } from '../utils/media';
 import { probeAudioDuration } from '../utils/format';
 import { CLONE_MAX_SECONDS, PRESETS } from '../utils/constants';
+import { shouldOpenSamplePreview } from '../utils/audioTrim';
 import { toast } from 'react-hot-toast';
 
 /**
@@ -47,6 +48,7 @@ export default function useTTS({ selectedProfile, setSelectedProfile, loadHistor
   const timerRef = useRef(null);
   const statusPollRef = useRef(null);
   const textAreaRef = useRef(null);
+  const ingestSeqRef = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -56,16 +58,32 @@ export default function useTTS({ selectedProfile, setSelectedProfile, loadHistor
   }, []);
 
   const ingestRefAudio = useCallback(async (file) => {
-    if (!file) { setRefAudio(null); return; }
-    const dur = await probeAudioDuration(file);
-    if (dur && dur > CLONE_MAX_SECONDS) {
+    const seq = ingestSeqRef.current + 1;
+    ingestSeqRef.current = seq;
+    if (!file) {
+      setRefAudio(null);
+      setPendingTrimFile(null);
+      return;
+    }
+    setSelectedProfile(null);
+    setRefAudio(null);
+    if (shouldOpenSamplePreview(null, CLONE_MAX_SECONDS)) {
       setPendingTrimFile(file);
-      setSelectedProfile(null);
-      toast(`Audio is ${dur.toFixed(1)}s — trim to ≤${CLONE_MAX_SECONDS}s for best cloning`);
+      let dur = null;
+      try {
+        dur = await probeAudioDuration(file);
+      } catch {
+        // Some recorded blobs do not expose usable metadata until decoded in the trimmer.
+      }
+      if (ingestSeqRef.current !== seq) return;
+      if (dur && dur > CLONE_MAX_SECONDS) {
+        toast(`Audio is ${dur.toFixed(1)}s — trim to ≤${CLONE_MAX_SECONDS}s for best cloning`);
+      } else {
+        toast('Preview the sample, then click Use trimmed to load it');
+      }
       return;
     }
     setRefAudio(file);
-    setSelectedProfile(null);
   }, [setSelectedProfile]);
 
   const insertTag = useCallback((tag) => {

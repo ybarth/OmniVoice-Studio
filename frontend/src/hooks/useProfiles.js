@@ -1,6 +1,13 @@
 import { useState, useCallback } from 'react';
 import { useAppStore } from '../store';
-import { createProfile, deleteProfile as apiDeleteProfile, lockProfile, unlockProfile } from '../api/profiles';
+import {
+  createProfile,
+  deleteProfile as apiDeleteProfile,
+  lockProfile,
+  unlockProfile,
+  updateProfile,
+  uploadProfilePhoto,
+} from '../api/profiles';
 import { generateSpeech, audioUrlWithCacheBust } from '../api/generate';
 import { playBlobAudio } from '../utils/media';
 import { PRESETS } from '../utils/constants';
@@ -80,6 +87,40 @@ export default function useProfiles({ loadHistory, loadProfiles }) {
     setInstruct(profile.instruct || '');
     if (profile.language && profile.language !== 'Auto') setLanguage(profile.language);
   }, [setRefText, setInstruct, setLanguage]);
+
+  const handleRenameProfile = useCallback(async (id, name) => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      toast.error('A voice profile needs a name');
+      return null;
+    }
+    try {
+      const updated = await updateProfile(id, { name: trimmed });
+      await loadProfiles();
+      toast.success(`Renamed profile to ${updated.name}`);
+      return updated;
+    } catch (e) {
+      toast.error(e.message || 'Failed to rename profile');
+      return null;
+    }
+  }, [loadProfiles]);
+
+  const handleUploadProfilePhoto = useCallback(async (id, file) => {
+    if (!file) return null;
+    if (!file.type?.startsWith('image/') && !/\.(png|jpe?g|webp|gif)$/i.test(file.name || '')) {
+      toast.error('Choose an image file for the profile photo');
+      return null;
+    }
+    try {
+      const updated = await uploadProfilePhoto(id, file);
+      await loadProfiles();
+      toast.success(`Updated ${updated.name}'s photo`);
+      return updated;
+    } catch (e) {
+      toast.error(e.message || 'Failed to upload profile photo');
+      return null;
+    }
+  }, [loadProfiles]);
 
   const handlePreviewVoice = useCallback(async (proj, e) => {
     e.stopPropagation();
@@ -222,6 +263,8 @@ export default function useProfiles({ loadHistory, loadProfiles }) {
     handleSaveProfile,
     handleDeleteProfile,
     handleSelectProfile,
+    handleRenameProfile,
+    handleUploadProfilePhoto,
     handlePreviewVoice,
     handleSegmentPreview,
     handleSaveHistoryAsProfile,

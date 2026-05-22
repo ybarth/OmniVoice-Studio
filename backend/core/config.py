@@ -38,6 +38,7 @@ _ensure_short_hf_cache_on_windows()
 
 DATA_DIR = get_app_data_dir()
 VOICES_DIR = os.path.join(DATA_DIR, "voices")       # Reference audio for profiles
+PROFILE_PHOTOS_DIR = os.path.join(DATA_DIR, "profile_photos")
 OUTPUTS_DIR = os.path.join(DATA_DIR, "outputs")      # Generated audio files
 DUB_DIR = os.path.join(DATA_DIR, "dub_jobs")
 DB_PATH = os.path.join(DATA_DIR, "omnivoice.db")
@@ -49,7 +50,7 @@ IDLE_TIMEOUT_SECONDS = int(os.environ.get("OMNIVOICE_IDLE_TIMEOUT", "900"))
 CPU_POOL_WORKERS = int(os.environ.get("OMNIVOICE_CPU_POOL", "0")) or min(8, (os.cpu_count() or 4))
 
 def ensure_dirs():
-    for d in [DATA_DIR, VOICES_DIR, OUTPUTS_DIR, DUB_DIR, PREVIEW_DIR]:
+    for d in [DATA_DIR, VOICES_DIR, PROFILE_PHOTOS_DIR, OUTPUTS_DIR, DUB_DIR, PREVIEW_DIR]:
         os.makedirs(d, exist_ok=True)
 
 ensure_dirs()

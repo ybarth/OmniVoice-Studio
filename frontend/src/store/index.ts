@@ -29,8 +29,17 @@ import type { GenerateSlice } from './generateSlice';
 import { createGenerateSlice } from './generateSlice';
 import type { PillSlice } from './pillSlice';
 import { createPillSlice } from './pillSlice';
+import type { ConversationSlice } from './conversationSlice';
+import { createConversationSlice } from './conversationSlice';
 
-export type AppStore = PrefsSlice & GlossarySlice & UiSlice & DubSlice & GenerateSlice & PillSlice;
+export type AppStore = PrefsSlice & GlossarySlice & UiSlice & DubSlice & GenerateSlice & PillSlice & ConversationSlice;
+
+function stripVolatileConversationAudio(turns = []) {
+  return turns.map(turn => ({
+    ...turn,
+    sourceAudioUrl: turn.sourceAudioUrl?.startsWith?.('blob:') ? '' : turn.sourceAudioUrl,
+  }));
+}
 
 /**
  * `useAppStore` — single root store. Don't create siblings. Slices compose here.
@@ -48,6 +57,7 @@ export const useAppStore = create<AppStore>()(
       ...createDubSlice(set, get, api),
       ...createGenerateSlice(set, get, api),
       ...createPillSlice(set, get, api),
+      ...createConversationSlice(set, get, api),
     }),
     {
       name: 'omnivoice.app',
@@ -66,6 +76,13 @@ export const useAppStore = create<AppStore>()(
         sidebarTab:                 s.sidebarTab,
         uiScale:                    s.uiScale,
         theme:                      s.theme,
+        activeConversationId:       s.activeConversationId,
+        conversationArchive:        s.conversationArchive.map(conversation => ({
+          ...conversation,
+          turns: stripVolatileConversationAudio(conversation.turns),
+        })),
+        conversationSpeakers:       s.conversationSpeakers,
+        conversationTurns:          stripVolatileConversationAudio(s.conversationTurns),
         // Generate-tab prefs — users expect their synthesis knobs to stick.
         language:      s.language,
         speed:         s.speed,
@@ -79,16 +96,16 @@ export const useAppStore = create<AppStore>()(
         postprocess:   s.postprocess,
         vdStates:      s.vdStates,
       }),
-      version: 3,
+      version: 5,
       // Drop old persisted shapes rather than crashing the app. Every field
       // has a safe default in its slice, so v1/v2 users pick up v3 defaults
       // for the new fields (mode, uiScale, generate knobs, etc.) and keep
       // any keys we still write today. Upgrade > crash.
       migrate: (persisted, version) => {
         if (!persisted || typeof persisted !== 'object') return {} as Partial<AppStore>;
-        if (version < 3) {
+        if (version < 5) {
           // v1 → v2 added reviewMode; v2 → v3 added mode/sidebar/generate knobs.
-          // All of those have slice defaults, so passing through the old keys
+          // v4/v5 added conversation state. All of those have slice defaults, so passing through the old keys
           // is sufficient — anything missing falls through to the slice init.
           return persisted as Partial<AppStore>;
         }

@@ -96,6 +96,34 @@
 .engines-list__name code { color: var(--chrome-fg); font-family: var(--chrome-font-mono); font-size: var(--text-sm); }
 .engines-list__reason    { flex-basis: 100%; font-size: var(--text-xs); color: var(--chrome-fg-dim); font-family: var(--font-sans); padding-left: var(--space-4); }
 
+.settings-dictation-grid {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.7fr) minmax(240px, 1.1fr) auto;
+  gap: var(--space-3);
+  align-items: end;
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--chrome-radius-panel);
+  background: color-mix(in srgb, var(--chrome-bg-raised) 72%, transparent);
+}
+
+.settings-dictation-grid label {
+  display: grid;
+  gap: 5px;
+}
+
+.settings-dictation-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 32px;
+}
+
+.settings-prose--compact {
+  margin-top: var(--space-2);
+}
+
 /* ── Models tab ──────────────────────────────────────────────── */
 .reco-banner {
   display: flex;

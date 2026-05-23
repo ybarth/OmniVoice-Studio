@@ -224,6 +224,7 @@ from api.routers import (
     marketplace,
     sonitranslate,
     conversation,
+    documents,
 )
 from utils import hf_progress
 
@@ -388,6 +389,7 @@ _allowed = os.environ.get(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in _allowed if o.strip()],
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1):\d+$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -437,6 +439,7 @@ app.include_router(tts_stream.router)
 app.include_router(marketplace.router)
 app.include_router(sonitranslate.router)
 app.include_router(conversation.router)
+app.include_router(documents.router)
 
 frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
 if os.path.exists(frontend_path):

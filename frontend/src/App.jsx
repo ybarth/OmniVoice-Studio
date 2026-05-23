@@ -21,6 +21,7 @@ const KeyboardCheatsheet = lazy(() => import('./components/KeyboardCheatsheet'))
 const VoicePreview = lazy(() => import('./components/VoicePreview'));
 const LogsFooter = lazy(() => import('./components/LogsFooter'));
 const ProjectsPage = lazy(() => import('./pages/Projects'));
+const DocumentLibrary = lazy(() => import('./pages/DocumentLibrary'));
 const VoiceGallery = lazy(() => import('./pages/VoiceGallery'));
 const DonatePage = lazy(() => import('./pages/DonatePage'));
 const EnterprisePage = lazy(() => import('./pages/EnterprisePage'));
@@ -59,6 +60,7 @@ import { exportAction, exportReveal, exportRecord } from './api/exports';
 
 import { isTauri, canUseTauriNativeApi, doubleClickMaximize, fileToMediaUrl, playBlobAudio, playPing } from './utils/media';
 import { historyAudioDownloadUrl, safeDownloadName } from './utils/downloads';
+import { getGlobalDubDropFile } from './utils/fileImports';
 
 function App() {
   // First-run bootstrap: Rust spawns uv sync in a background thread and
@@ -133,7 +135,7 @@ function App() {
   const openVoiceProfile = useAppStore(s => s.openVoiceProfile);
   const closeVoiceProfile = useAppStore(s => s.closeVoiceProfile);
   const hideSidebar = mode === 'launchpad' || mode === 'settings' || mode === 'voice' || mode === 'donate'
-    || mode === 'queue' || mode === 'tools' || mode === 'projects' || mode === 'gallery' || mode === 'enterprise' || mode === 'transcriptions'
+    || mode === 'queue' || mode === 'tools' || mode === 'projects' || mode === 'document-library' || mode === 'gallery' || mode === 'enterprise' || mode === 'transcriptions'
     || mode === 'stories' || mode === 'conversation';
   const availableSidebarTabs = mode === 'dub'
     ? ['projects', 'history', 'downloads']
@@ -450,19 +452,15 @@ function App() {
     
     // 4. Global Drag and drop for seamless native feeling
     const handleDrop = (e) => {
+      const file = getGlobalDubDropFile(e);
       e.preventDefault();
-      const file = e.dataTransfer?.files[0];
       if (!file) return;
-      
-      const isVideo = file.name.match(/\.(mp4|mov|mkv|webm|avi)$/i);
-      const isAudio = file.name.match(/\.(mp3|wav|flac|m4a|ogg)$/i);
-      if (isVideo || isAudio) {
-        setMode('dub');
-        setDubVideoFile(file);
-        fileToMediaUrl(file, null).then(urls => setDubLocalBlobUrl(urls));
-        setDubFilename(file.name);
-        setDubStep('idle');
-      }
+
+      setMode('dub');
+      setDubVideoFile(file);
+      fileToMediaUrl(file, null).then(urls => setDubLocalBlobUrl(urls));
+      setDubFilename(file.name);
+      setDubStep('idle');
     };
     const handleDragOver = (e) => e.preventDefault();
 
@@ -933,6 +931,15 @@ function App() {
                 onOpenDub={(id) => { loadProject(id); setMode('dub'); }}
                 onOpenProfile={(id) => { openVoiceProfile(id); }}
                 onRevealExport={(path) => { exportReveal({ path }).catch(() => {}); }}
+              />
+            </Suspense>
+          </ErrorBoundary>
+        ) : mode === 'document-library' ? (
+          <ErrorBoundary name="document-library">
+            <Suspense fallback={<LazyFallback />}>
+              <DocumentLibrary
+                profiles={profiles}
+                loadHistory={loadHistory}
               />
             </Suspense>
           </ErrorBoundary>

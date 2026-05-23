@@ -5,32 +5,13 @@ import {
 } from 'lucide-react';
 import './Projects.css';
 
-/**
- * OmniDrive — browse everything (studio dubs, voice profiles, generation
- * history, exports) in one place.
- *
- * Shape:
- *   ┌─────────────────────────────────────────────┐
- *   │ header strip (search + view toggle)         │
- *   ├─ filter rail ─┬── content grid/list ────────┤
- *   │ All           │                              │
- *   │ Dubs      (3) │   [card] [card] [card]      │
- *   │ Profiles (12) │   [card] [card] ...         │
- *   │ History  (48) │                              │
- *   │ Exports   (7) │                              │
- *   └───────────────┴──────────────────────────────┘
- *
- * Props reuse what App.jsx already loads — no new fetchers are added so
- * this page stays in sync with the Sidebar and Launchpad automatically.
- */
-
 const FILTERS = [
-  { id: 'all',      label: 'All',            Icon: FolderOpen  },
-  { id: 'dubs',     label: 'Dub Projects',   Icon: Film        },
+  { id: 'all', label: 'All', Icon: FolderOpen },
+  { id: 'dubs', label: 'Dub Projects', Icon: Film },
   { id: 'profiles', label: 'Voice Profiles', Icon: Fingerprint },
-  { id: 'transcripts', label: 'Transcripts', Icon: Mic         },
-  { id: 'history',  label: 'History',        Icon: Music       },
-  { id: 'exports',  label: 'Exports',        Icon: Download    },
+  { id: 'transcripts', label: 'Transcripts', Icon: Mic },
+  { id: 'history', label: 'History', Icon: Music },
+  { id: 'exports', label: 'Exports', Icon: Download },
 ];
 
 function fmtTime(ts) {
@@ -39,9 +20,9 @@ function fmtTime(ts) {
   if (!Number.isFinite(d)) return '';
   const diff = Date.now() - d;
   const s = Math.floor(diff / 1000);
-  if (s < 60)     return `${s}s ago`;
-  if (s < 3600)   return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400)  return `${Math.floor(s / 3600)}h ago`;
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
 }
 
@@ -81,20 +62,18 @@ export default function Projects({
   profiles = [],
   history = [],
   exportHistory = [],
-  onOpenDub,           // (projectId) => void — loads project + switches to dub mode
-  onOpenProfile,       // (voiceId)   => void
-  onRevealExport,      // (path)      => void
+  onOpenDub,
+  onOpenProfile,
+  onRevealExport,
 }) {
-  const [filter, setFilter]   = useState('all');
-  const [query, setQuery]     = useState('');
-  const [view, setView]       = useState('grid');  // grid | list
-
-  // Load transcriptions from localStorage (same source as TranscriptionsPage)
+  const [filter, setFilter] = useState('all');
+  const [query, setQuery] = useState('');
+  const [view, setView] = useState('grid');
   const [transcriptions, setTranscriptions] = useState(() => {
     try { return JSON.parse(localStorage.getItem('omni_transcriptions') || '[]'); }
     catch { return []; }
   });
-  // Listen for new transcriptions
+
   React.useEffect(() => {
     const handler = () => {
       try { setTranscriptions(JSON.parse(localStorage.getItem('omni_transcriptions') || '[]')); }
@@ -104,70 +83,71 @@ export default function Projects({
     return () => window.removeEventListener('omni:transcription-added', handler);
   }, []);
 
-  // Normalise every source into a common shape so the filter + search +
-  // sort pipeline is identical regardless of origin.
   const items = useMemo(() => {
     const list = [];
-    for (const p of studioProjects) {
+    for (const project of studioProjects) {
       list.push({
         type: 'dubs',
-        id: p.id,
-        title: p.name || p.video_path?.split('/').pop() || p.id,
-        subtitle: fmtDuration(p.duration),
-        ts: (p.updated_at || p.created_at || 0) * 1000,
+        id: project.id,
+        title: project.name || project.video_path?.split('/').pop() || project.id,
+        subtitle: fmtDuration(project.duration),
+        ts: (project.updated_at || project.created_at || 0) * 1000,
         accent: '#fe8019',
         Icon: Film,
-        onClick: () => onOpenDub?.(p.id),
+        onClick: () => onOpenDub?.(project.id),
       });
     }
-    for (const pr of profiles) {
-      const kind = pr.kind || 'clone';
+    for (const profile of profiles) {
+      const kind = profile.kind || 'clone';
       list.push({
         type: 'profiles',
-        id: pr.id,
-        title: pr.name || pr.id,
+        id: profile.id,
+        title: profile.name || profile.id,
         subtitle: kind === 'design' ? 'Designed voice' : 'Cloned voice',
-        ts: (pr.updated_at || pr.created_at || 0) * 1000,
+        ts: (profile.updated_at || profile.created_at || 0) * 1000,
         accent: kind === 'design' ? '#8ec07c' : '#d3869b',
         Icon: kind === 'design' ? Wand2 : Fingerprint,
-        onClick: () => onOpenProfile?.(pr.id),
+        onClick: () => onOpenProfile?.(profile.id),
       });
     }
-    for (const h of history) {
+    for (const item of history) {
       list.push({
         type: 'history',
-        id: h.filename || h.id || String(Math.random()),
-        title: (h.text || h.prompt || h.filename || 'Generated audio').slice(0, 80),
-        subtitle: h.language || h.voice || '',
-        ts: h.timestamp || h.created_at || 0,
+        id: item.filename || item.id || String(Math.random()),
+        title: (item.text || item.prompt || item.filename || 'Generated audio').slice(0, 80),
+        subtitle: item.language || item.voice || '',
+        ts: item.timestamp || item.created_at || 0,
         accent: '#f3a5b6',
         Icon: Music,
         onClick: undefined,
       });
     }
-    for (const e of exportHistory) {
+    for (const item of exportHistory) {
       list.push({
         type: 'exports',
-        id: e.path || e.id,
-        title: e.path?.split('/').pop() || e.filename || 'Export',
-        subtitle: e.mode || '',
-        ts: (e.created_at || 0) * 1000,
+        id: item.path || item.id,
+        title: item.path?.split('/').pop() || item.filename || 'Export',
+        subtitle: item.mode || '',
+        ts: (item.created_at || 0) * 1000,
         accent: '#fabd2f',
         Icon: Download,
-        onClick: () => e.path && onRevealExport?.(e.path),
+        onClick: () => item.path && onRevealExport?.(item.path),
       });
     }
-    for (const t of transcriptions) {
+    for (const transcript of transcriptions) {
       list.push({
         type: 'transcripts',
-        id: t.id || String(Math.random()),
-        title: (t.text || 'Transcription').slice(0, 120),
-        subtitle: [t.language, t.duration_s ? `${Math.round(t.duration_s)}s` : ''].filter(Boolean).join(' · '),
-        ts: t.timestamp ? Date.parse(t.timestamp) : 0,
+        id: transcript.id || String(Math.random()),
+        title: (transcript.text || 'Transcription').slice(0, 120),
+        subtitle: [
+          transcript.language,
+          transcript.duration_s ? `${Math.round(transcript.duration_s)}s` : '',
+        ].filter(Boolean).join(' · '),
+        ts: transcript.timestamp ? Date.parse(transcript.timestamp) : 0,
         accent: '#83a598',
         Icon: FileText,
         onClick: () => {
-          navigator.clipboard.writeText(t.text || '');
+          navigator.clipboard.writeText(transcript.text || '');
         },
       });
     }
@@ -176,30 +156,30 @@ export default function Projects({
   }, [studioProjects, profiles, history, exportHistory, transcriptions, onOpenDub, onOpenProfile, onRevealExport]);
 
   const counts = useMemo(() => {
-    const c = { all: items.length };
-    for (const it of items) c[it.type] = (c[it.type] || 0) + 1;
-    return c;
+    const nextCounts = { all: items.length };
+    for (const item of items) nextCounts[item.type] = (nextCounts[item.type] || 0) + 1;
+    return nextCounts;
   }, [items]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return items.filter(it => {
-      if (filter !== 'all' && it.type !== filter) return false;
+    return items.filter(item => {
+      if (filter !== 'all' && item.type !== filter) return false;
       if (!q) return true;
-      return (it.title + ' ' + (it.subtitle || '')).toLowerCase().includes(q);
+      return `${item.title} ${item.subtitle || ''}`.toLowerCase().includes(q);
     });
   }, [items, filter, query]);
 
   return (
     <div className="projects">
       <div className="projects__header">
-        <h1 className="projects__title">OmniDrive</h1>
+        <h1 className="projects__title">Drive</h1>
         <div className="projects__toolbar">
           <div className="projects__search">
             <Search size={12} />
             <input
               value={query}
-              onChange={e => setQuery(e.target.value)}
+              onChange={event => setQuery(event.target.value)}
               placeholder="Search dubs, clones, transcripts, exports…"
               spellCheck={false}
             />
@@ -227,19 +207,19 @@ export default function Projects({
 
       <div className="projects__body">
         <aside className="projects__rail">
-          {FILTERS.map(f => {
-            const FI = f.Icon;
-            const n = counts[f.id] ?? 0;
+          {FILTERS.map(filterItem => {
+            const FilterIcon = filterItem.Icon;
+            const count = counts[filterItem.id] ?? 0;
             return (
               <button
-                key={f.id}
+                key={filterItem.id}
                 type="button"
-                className={`projects__rail-item ${filter === f.id ? 'is-active' : ''}`}
-                onClick={() => setFilter(f.id)}
+                className={`projects__rail-item ${filter === filterItem.id ? 'is-active' : ''}`}
+                onClick={() => setFilter(filterItem.id)}
               >
-                <FI size={12} />
-                <span>{f.label}</span>
-                <span className="projects__rail-count">{n}</span>
+                <FilterIcon size={12} />
+                <span>{filterItem.label}</span>
+                <span className="projects__rail-count">{count}</span>
               </button>
             );
           })}
@@ -252,16 +232,16 @@ export default function Projects({
               <p>{query ? `No matches for “${query}”` : 'Nothing here yet. Start a dub, design a voice, or generate audio to see it appear.'}</p>
             </div>
           )}
-          {visible.map(it => (
+          {visible.map(item => (
             <Card
-              key={`${it.type}:${it.id}`}
-              kind={it.type.toUpperCase()}
-              accent={it.accent}
-              title={it.title}
-              subtitle={it.subtitle}
-              trailing={<span className="projects__card-time"><Clock size={10} />{fmtTime(it.ts)}</span>}
-              onClick={it.onClick}
-              IconC={it.Icon}
+              key={`${item.type}:${item.id}`}
+              kind={item.type.toUpperCase()}
+              accent={item.accent}
+              title={item.title}
+              subtitle={item.subtitle}
+              trailing={<span className="projects__card-time"><Clock size={10} />{fmtTime(item.ts)}</span>}
+              onClick={item.onClick}
+              IconC={item.Icon}
             />
           ))}
         </section>

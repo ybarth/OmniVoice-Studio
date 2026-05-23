@@ -144,6 +144,19 @@ body {
   min-height: 100vh;
 }
 
+/* Keep file inputs eligible for native picker activation in desktop webviews
+   while removing them from the visible layout. */
+.native-file-input {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
 /* Default headings — sans, tight leading. Overrides live per page. */
 h1, h2, h3, h4 {
   font-family: var(--font-sans);

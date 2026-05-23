@@ -20,6 +20,7 @@ export type AppMode =
   | 'clone'
   | 'conversation'
   | 'design'
+  | 'document-library'
   | 'stories'
   | 'voice'
   | 'tools'

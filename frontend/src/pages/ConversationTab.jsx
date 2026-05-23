@@ -870,7 +870,7 @@ export default function ConversationTab({ profiles = [], loadHistory }) {
               ref={fileInputRef}
               type="file"
               accept="audio/*"
-              hidden
+              className="native-file-input"
               onChange={handleTurnAudioUpload}
             />
             <div className="conversation-audio-input__actions">

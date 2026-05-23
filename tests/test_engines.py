@@ -19,6 +19,65 @@ def test_tts_registry_lists_all_backends():
         assert set(r) >= {"id", "display_name", "available", "reason"}
 
 
+def test_tts_registry_exposes_open_source_voice_catalog():
+    rows = tts_backend.list_backends()
+    for row in rows:
+        assert "voices" in row, f"{row['id']} missing voices"
+        assert row["voices"], f"{row['id']} should expose at least a default voice"
+        for voice in row["voices"]:
+            assert set(voice) >= {"id", "name", "engine_id", "kind"}
+            assert voice["engine_id"] == row["id"]
+
+    kitten = next(row for row in rows if row["id"] == "kittentts")
+    kitten_voice_ids = {voice["id"] for voice in kitten["voices"]}
+    assert set(tts_backend.KittenTTSBackend.PRESET_VOICES).issubset(kitten_voice_ids)
+
+
+def test_tts_prepare_voice_routes_catalog_parameter(monkeypatch):
+    calls = []
+
+    class DummyPrepareBackend(tts_backend.TTSBackend):
+        id = "dummy-prepare"
+        display_name = "Dummy Prepare"
+
+        @property
+        def sample_rate(self):
+            return 24000
+
+        @property
+        def supported_languages(self):
+            return ["multi"]
+
+        @classmethod
+        def is_available(cls):
+            return True, "ready"
+
+        @classmethod
+        def voice_catalog(cls):
+            return [{
+                "id": "speaker-7",
+                "name": "Speaker Seven",
+                "engine_id": cls.id,
+                "kind": "speaker",
+                "parameter": "speaker_id",
+                "language": "multi",
+            }]
+
+        def generate(self, text, **extras):
+            import torch
+            calls.append({"text": text, **extras})
+            return torch.zeros(1, 160)
+
+    monkeypatch.setitem(tts_backend._REGISTRY, "dummy-prepare", DummyPrepareBackend)
+
+    status = tts_backend.prepare_voice("dummy-prepare", "speaker-7", sample_text="ready check")
+
+    assert status["status"] == "ready"
+    assert status["ready"] is True
+    assert status["sample_count"] == 160
+    assert calls == [{"text": "ready check", "speaker_id": "speaker-7"}]
+
+
 def test_tts_voxcpm2_unavailable_message_is_actionable():
     ok, msg = tts_backend.VoxCPM2Backend.is_available()
     # On most CI boxes voxcpm isn't installed; message must tell the user how.

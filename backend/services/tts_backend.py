@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from abc import ABC, abstractmethod
 from typing import Optional
 
@@ -61,6 +62,22 @@ class TTSBackend(ABC):
     #: Whether this engine supports voice design from a text description
     #: (e.g. "young female, warm tone, British accent") without reference audio.
     supports_voice_design: bool = False
+
+    @classmethod
+    def voice_catalog(cls) -> list[dict]:
+        """Preset/open-source voices exposed by this engine.
+
+        The default entry represents the engine's natural default voice. Engines
+        with fixed speakers override this with their full preset list.
+        """
+        return [{
+            "id": "default",
+            "name": "Default voice",
+            "engine_id": cls.id,
+            "kind": "default",
+            "parameter": None,
+            "language": "multi",
+        }]
 
     @abstractmethod
     def generate(
@@ -392,6 +409,31 @@ class KittenTTSBackend(TTSBackend):
     ]
     DEFAULT_VOICE = "expr-voice-2-f"
 
+    @classmethod
+    def voice_catalog(cls) -> list[dict]:
+        labels = {
+            "expr-voice-2-m": "Kitten 2 Male",
+            "expr-voice-2-f": "Kitten 2 Female",
+            "expr-voice-3-m": "Kitten 3 Male",
+            "expr-voice-3-f": "Kitten 3 Female",
+            "expr-voice-4-m": "Kitten 4 Male",
+            "expr-voice-4-f": "Kitten 4 Female",
+            "expr-voice-5-m": "Kitten 5 Male",
+            "expr-voice-5-f": "Kitten 5 Female",
+        }
+        return [
+            {
+                "id": voice,
+                "name": labels.get(voice, voice),
+                "engine_id": cls.id,
+                "kind": "preset",
+                "parameter": "voice",
+                "language": "en",
+                "default": voice == cls.DEFAULT_VOICE,
+            }
+            for voice in cls.PRESET_VOICES
+        ]
+
     def __init__(self):
         self._model = None
 
@@ -488,6 +530,57 @@ class MLXAudioBackend(TTSBackend):
         "outetts":     "mlx-community/Llama-OuteTTS-1.0-1B-4bit",
     }
     DEFAULT_MODEL_KEY = "kokoro"
+
+    KOKORO_VOICES = [
+        ("af_heart", "Heart", "en-us"),
+        ("af_alloy", "Alloy", "en-us"),
+        ("af_aoede", "Aoede", "en-us"),
+        ("af_bella", "Bella", "en-us"),
+        ("af_jessica", "Jessica", "en-us"),
+        ("af_kore", "Kore", "en-us"),
+        ("af_nicole", "Nicole", "en-us"),
+        ("af_nova", "Nova", "en-us"),
+        ("af_river", "River", "en-us"),
+        ("af_sarah", "Sarah", "en-us"),
+        ("af_sky", "Sky", "en-us"),
+        ("am_adam", "Adam", "en-us"),
+        ("am_echo", "Echo", "en-us"),
+        ("am_eric", "Eric", "en-us"),
+        ("am_fenrir", "Fenrir", "en-us"),
+        ("am_liam", "Liam", "en-us"),
+        ("am_michael", "Michael", "en-us"),
+        ("am_onyx", "Onyx", "en-us"),
+        ("am_puck", "Puck", "en-us"),
+        ("am_santa", "Santa", "en-us"),
+        ("bf_alice", "Alice", "en-gb"),
+        ("bf_emma", "Emma", "en-gb"),
+        ("bf_isabella", "Isabella", "en-gb"),
+        ("bf_lily", "Lily", "en-gb"),
+        ("bm_daniel", "Daniel", "en-gb"),
+        ("bm_fable", "Fable", "en-gb"),
+        ("bm_george", "George", "en-gb"),
+        ("bm_lewis", "Lewis", "en-gb"),
+    ]
+
+    @classmethod
+    def voice_catalog(cls) -> list[dict]:
+        key = os.environ.get("OMNIVOICE_MLX_AUDIO_MODEL", cls.DEFAULT_MODEL_KEY)
+        model_id = cls.CURATED_MODELS.get(key, key)
+        if "kokoro" not in model_id.lower():
+            return super().voice_catalog()
+        return [
+            {
+                "id": voice_id,
+                "name": name,
+                "engine_id": cls.id,
+                "kind": "preset",
+                "parameter": "voice",
+                "language": language,
+                "model": model_id,
+                "default": voice_id == "af_heart",
+            }
+            for voice_id, name, language in cls.KOKORO_VOICES
+        ]
 
     def __init__(self):
         self._model = None
@@ -604,6 +697,30 @@ class CosyVoiceBackend(TTSBackend):
         "es": "<|es|>", "fr": "<|fr|>", "it": "<|it|>",
         "ru": "<|ru|>",
     }
+    SFT_VOICES = [
+        ("中文女", "Chinese Female", "zh"),
+        ("中文男", "Chinese Male", "zh"),
+        ("粤语女", "Cantonese Female", "yue"),
+        ("英文女", "English Female", "en"),
+        ("英文男", "English Male", "en"),
+        ("日语男", "Japanese Male", "ja"),
+        ("韩语女", "Korean Female", "ko"),
+    ]
+
+    @classmethod
+    def voice_catalog(cls) -> list[dict]:
+        return [
+            {
+                "id": voice_id,
+                "name": name,
+                "engine_id": cls.id,
+                "kind": "preset",
+                "parameter": "voice",
+                "language": language,
+                "default": index == 0,
+            }
+            for index, (voice_id, name, language) in enumerate(cls.SFT_VOICES)
+        ]
 
     def __init__(self):
         self._model = None
@@ -653,6 +770,7 @@ class CosyVoiceBackend(TTSBackend):
         ref_text = kw.get("ref_text")
         instruct = kw.get("instruct")
         language = kw.get("language")
+        voice = kw.get("voice")
 
         # Pick the right inference method based on what the caller provides:
         # 1. instruct + ref_audio → inference_instruct2 (emotion/dialect/speed)
@@ -684,7 +802,7 @@ class CosyVoiceBackend(TTSBackend):
         else:
             # No ref audio — try SFT with first available speaker.
             spks = self._model.list_available_spks()
-            spk = spks[0] if spks else "中文女"
+            spk = voice if voice in spks else (spks[0] if spks else "中文女")
             results = self._model.inference_sft(text, spk, stream=False)
 
         for chunk in results:
@@ -1039,6 +1157,31 @@ class SherpaOnnxBackend(TTSBackend):
         self._model_dir = os.environ.get("OMNIVOICE_SHERPA_MODEL", "")
 
     @classmethod
+    def voice_catalog(cls) -> list[dict]:
+        raw = os.environ.get("OMNIVOICE_SHERPA_SPEAKERS", "")
+        if not raw:
+            return super().voice_catalog()
+        voices = []
+        for item in raw.split(","):
+            item = item.strip()
+            if not item:
+                continue
+            if ":" in item:
+                sid, name = item.split(":", 1)
+            else:
+                sid, name = item, f"Speaker {item}"
+            voices.append({
+                "id": sid.strip(),
+                "name": name.strip() or f"Speaker {sid.strip()}",
+                "engine_id": cls.id,
+                "kind": "speaker",
+                "parameter": "speaker_id",
+                "language": "multi",
+                "default": sid.strip() == "0",
+            })
+        return voices or super().voice_catalog()
+
+    @classmethod
     def is_available(cls) -> tuple[bool, str]:
         try:
             import sherpa_onnx  # noqa: F401
@@ -1141,6 +1284,107 @@ _INSTALL_HINTS: dict[str, str] = {
 }
 
 
+_VOICE_PREPARE_STATUS: dict[str, dict] = {}
+
+
+def _voice_prepare_key(engine_id: str, voice_id: str) -> str:
+    return f"{engine_id}:{voice_id}"
+
+
+def get_voice_prepare_status(engine_id: str, voice_id: str) -> dict:
+    key = _voice_prepare_key(engine_id, voice_id)
+    return _VOICE_PREPARE_STATUS.get(key, {
+        "engine_id": engine_id,
+        "voice_id": voice_id,
+        "status": "not_checked",
+        "ready": False,
+        "detail": "Not checked",
+    }).copy()
+
+
+def _set_voice_prepare_status(engine_id: str, voice_id: str, **fields) -> dict:
+    status = {
+        "engine_id": engine_id,
+        "voice_id": voice_id,
+        "status": fields.pop("status", "not_checked"),
+        "ready": fields.pop("ready", False),
+        "detail": fields.pop("detail", ""),
+        "updated_at": time.time(),
+        **fields,
+    }
+    _VOICE_PREPARE_STATUS[_voice_prepare_key(engine_id, voice_id)] = status
+    return status.copy()
+
+
+def _voice_generate_kwargs(voice: dict) -> dict:
+    voice_id = str(voice.get("id") or "default")
+    parameter = voice.get("parameter")
+    kwargs = {}
+    if parameter == "speaker_id":
+        kwargs["speaker_id"] = voice_id
+    elif parameter == "voice" and voice_id != "default":
+        kwargs["voice"] = voice_id
+    language = voice.get("language")
+    if language and language != "multi":
+        kwargs["language"] = language
+    return kwargs
+
+
+def _merge_voice_status(voice: dict) -> dict:
+    voice_id = str(voice.get("id") or "default")
+    engine_id = str(voice.get("engine_id") or "")
+    status = get_voice_prepare_status(engine_id, voice_id)
+    return {
+        **voice,
+        "prepare_status": status.get("status", "not_checked"),
+        "prepare_detail": status.get("detail", ""),
+        "ready": bool(status.get("ready", False)),
+        "sample_count": status.get("sample_count"),
+        "prepared_at": status.get("prepared_at"),
+    }
+
+
+def prepare_voice(engine_id: str, voice_id: str, sample_text: str = "Voice readiness check.") -> dict:
+    """Warm and verify a catalog voice by running a tiny synthesis job.
+
+    This intentionally uses the real backend path instead of a shallow import
+    probe: it catches missing model files, unavailable speaker ids, and first
+    load failures before Document Library playback depends on the voice.
+    """
+    cls = get_backend_class(engine_id)
+    ok, reason = cls.is_available()
+    if not ok:
+        detail = f"{cls.display_name} is unavailable: {reason}"
+        _set_voice_prepare_status(engine_id, voice_id, status="error", ready=False, detail=detail)
+        raise RuntimeError(detail)
+
+    voice = next((item for item in cls.voice_catalog() if str(item.get("id")) == str(voice_id)), None)
+    if not voice:
+        detail = f"Unknown voice {voice_id!r} for {engine_id!r}"
+        _set_voice_prepare_status(engine_id, voice_id, status="error", ready=False, detail=detail)
+        raise ValueError(detail)
+
+    _set_voice_prepare_status(engine_id, voice_id, status="preparing", ready=False, detail="Loading model and checking voice")
+    try:
+        wav = cls().generate(sample_text, **_voice_generate_kwargs(voice))
+        sample_count = int(getattr(wav, "numel", lambda: 0)())
+        if sample_count <= 0:
+            raise RuntimeError("Voice check produced no audio")
+        return _set_voice_prepare_status(
+            engine_id,
+            voice_id,
+            status="ready",
+            ready=True,
+            detail="Ready for playback",
+            sample_count=sample_count,
+            prepared_at=time.time(),
+        )
+    except Exception as exc:
+        detail = str(exc)
+        _set_voice_prepare_status(engine_id, voice_id, status="error", ready=False, detail=detail)
+        raise
+
+
 def list_backends() -> list[dict]:
     """Enumerate every registered backend with its availability state.
     Shape matches what a Settings-UI engine picker wants.
@@ -1154,6 +1398,7 @@ def list_backends() -> list[dict]:
             "available": ok,
             "reason": None if ok else msg,
             "install_hint": _INSTALL_HINTS.get(bid),
+            "voices": [_merge_voice_status(voice) for voice in cls.voice_catalog()],
         })
     return out
 

@@ -277,7 +277,7 @@ export default function DubTab(props) {
                     id="srt-import-banner-input"
                     type="file"
                     accept=".srt,text/srt,text/plain"
-                    hidden
+                    className="dub-hidden-file"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
                       if (f) handleDubImportSrt(f);
@@ -329,7 +329,7 @@ export default function DubTab(props) {
                           id="srt-import-input"
                           type="file"
                           accept=".srt,text/srt,text/plain"
-                          hidden
+                          className="dub-hidden-file"
                           onChange={(e) => {
                             const f = e.target.files?.[0];
                             if (f) handleDubImportSrt(f);

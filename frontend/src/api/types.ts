@@ -27,6 +27,24 @@ export interface EngineBackend {
   runtime_detail?: string | null;
   runtime_progress_pct?: number | null;
   running?: boolean;
+  voices?: EngineVoice[];
+}
+
+export interface EngineVoice {
+  id: string;
+  name: string;
+  engine_id: string;
+  kind: 'default' | 'preset' | 'speaker' | string;
+  parameter?: 'voice' | 'speaker_id' | null | string;
+  language?: string;
+  description?: string;
+  model?: string;
+  default?: boolean;
+  prepare_status?: 'not_checked' | 'preparing' | 'ready' | 'error' | string;
+  prepare_detail?: string;
+  ready?: boolean;
+  sample_count?: number | null;
+  prepared_at?: number | null;
 }
 
 export interface EngineFamilyResponse {
@@ -45,6 +63,17 @@ export interface SelectEngineResponse {
   family: EngineFamily;
   active: string;
   env_override: boolean;
+}
+
+export interface VoicePrepareResponse {
+  engine_id: string;
+  voice_id: string;
+  status: 'preparing' | 'ready' | 'error' | string;
+  ready: boolean;
+  detail?: string;
+  sample_count?: number;
+  prepared_at?: number;
+  updated_at?: number;
 }
 
 // ── System / diagnostics ─────────────────────────────────────────────────

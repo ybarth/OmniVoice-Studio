@@ -17,7 +17,7 @@ import { toast } from 'react-hot-toast';
 import { openExternal } from '../api/external';
 import { systemLogs, systemLogsTauri, clearSystemLogs, clearTauriLogs, setEnvVar } from '../api/system';
 import { useSysinfo, useModelStatus, useSystemInfo, useModelScanStatus } from '../api/hooks';
-import { listEngines, selectEngine } from '../api/engines';
+import { listEngines, prepareTtsVoice, selectEngine } from '../api/engines';
 import { setupDownloadStreamUrl } from '../api/setup';
 import { getFrontendLogs, clearFrontendLogs } from '../utils/consoleBuffer';
 import { credentialBadgeLabel, credentialConfigured } from '../utils/credentialStatus';
@@ -869,11 +869,28 @@ export function ModelStoreTab({ info, modelBadge, refetchInfo }) {
   );
 }
 
+function voicePrepareTone(voice, backend) {
+  if (backend?.available === false) return 'warn';
+  if (voice?.prepare_status === 'ready' || voice?.ready) return 'success';
+  if (voice?.prepare_status === 'error') return 'danger';
+  if (voice?.prepare_status === 'preparing') return 'info';
+  return 'neutral';
+}
+
+function voicePrepareLabel(voice, backend) {
+  if (backend?.available === false) return 'engine unavailable';
+  if (voice?.prepare_status === 'ready' || voice?.ready) return 'ready';
+  if (voice?.prepare_status === 'error') return 'needs attention';
+  if (voice?.prepare_status === 'preparing') return 'checking';
+  return 'not checked';
+}
+
 
 export function EnginesTab() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState(null);
+  const [preparingVoice, setPreparingVoice] = useState(null);
   const [activeFam, setActiveFam] = useState('tts');
   const reviewMode = useAppStore(s => s.reviewMode);
   const setReviewMode = useAppStore(s => s.setReviewMode);
@@ -898,6 +915,21 @@ export function EnginesTab() {
     }
   }, [reload]);
 
+  const onPrepareVoice = useCallback(async (backendId, voiceId) => {
+    const key = `${backendId}:${voiceId}`;
+    setPreparingVoice(key);
+    try {
+      const result = await prepareTtsVoice(backendId, voiceId);
+      toast.success(result.ready ? 'Voice ready for playback' : (result.detail || 'Voice checked'));
+      await reload();
+    } catch (e) {
+      toast.error(e.message || 'Voice check failed');
+      await reload();
+    } finally {
+      setPreparingVoice(null);
+    }
+  }, [reload]);
+
   useEffect(() => { reload(); }, [reload]);
 
   if (loading && !data) {
@@ -909,6 +941,8 @@ export function EnginesTab() {
   const currentFam = fams.includes(activeFam) ? activeFam : fams[0];
   const family = currentFam ? data[currentFam] : null;
   const famTint = currentFam ? FAMILY_META[currentFam].tint : 'neutral';
+  const ttsVoiceRows = (data.tts?.backends || [])
+    .flatMap(backend => (backend.voices || []).map(voice => ({ backend, voice })));
 
   const COLUMNS = [
     { key: 'name',    label: 'Backend', flex: 3 },
@@ -1017,6 +1051,57 @@ export function EnginesTab() {
             })}
           </div>
         </Table>
+      )}
+
+      {!!ttsVoiceRows.length && (
+        <section className="settings-voice-catalog" aria-label="Voice Catalog">
+          <div className="settings-voice-catalog__head">
+            <div>
+              <h3>Voice Catalog</h3>
+              <span>Local voice readiness</span>
+            </div>
+            <Badge tone="info" size="xs">{ttsVoiceRows.length} voices</Badge>
+          </div>
+          <div className="settings-voice-catalog__grid">
+            {ttsVoiceRows.map(({ backend, voice }) => {
+              const key = `${backend.id}:${voice.id}`;
+              const busy = preparingVoice === key || voice.prepare_status === 'preparing';
+              const unavailable = backend.available === false;
+              return (
+                <div key={key} className={`settings-voice-catalog__row ${unavailable ? 'is-off' : ''}`}>
+                  <div className="settings-voice-catalog__voice">
+                    <span>
+                      <strong>{voice.name || voice.id}</strong>
+                      {voice.default && <Badge tone="brand" size="xs">default</Badge>}
+                    </span>
+                    <small>
+                      <code>{backend.id}</code>
+                      {' / '}
+                      <code>{voice.id}</code>
+                      {voice.language ? ` / ${voice.language}` : ''}
+                    </small>
+                    {(voice.prepare_detail || backend.reason) && (
+                      <em title={voice.prepare_detail || backend.reason}>{voice.prepare_detail || backend.reason}</em>
+                    )}
+                  </div>
+                  <Badge tone={voicePrepareTone(voice, backend)} size="xs">
+                    {voicePrepareLabel(voice, backend)}
+                  </Badge>
+                  <Button
+                    variant="subtle"
+                    size="sm"
+                    leading={<Download size={11} />}
+                    loading={busy}
+                    disabled={unavailable || busy}
+                    onClick={() => onPrepareVoice(backend.id, voice.id)}
+                  >
+                    Download / Verify
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       )}
     </section>
   );

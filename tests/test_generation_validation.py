@@ -1,5 +1,8 @@
 import io
 import os
+import asyncio
+import sys
+import types
 import wave
 
 from fastapi import HTTPException
@@ -117,6 +120,87 @@ def test_clone_generation_treats_regular_speaking_style_as_no_instruct(monkeypat
 
     assert res.status_code == 418
     assert res.json()["detail"]["instruct"] is None
+
+
+def test_generation_routes_engine_voice_to_tts_backend(monkeypatch):
+    monkeypatch.setitem(
+        sys.modules,
+        "python_multipart",
+        types.SimpleNamespace(__version__="0.0.99"),
+    )
+    from api.routers import generation
+    from core.db import init_db
+    import torch
+
+    init_db()
+    captured = {}
+
+    class DummyBackend:
+        id = "dummy-engine"
+        display_name = "Dummy Engine"
+
+        @classmethod
+        def is_available(cls):
+            return True, "ready"
+
+        @property
+        def sample_rate(self):
+            return 24000
+
+        def generate(self, text, **kwargs):
+            captured["text"] = text
+            captured["kwargs"] = kwargs
+            return torch.zeros(1, 2400)
+
+    def fail_get_model():
+        raise AssertionError("engine voice generation should not load the default model")
+
+    monkeypatch.setattr(generation, "get_model", fail_get_model)
+    monkeypatch.setattr(generation.tts_backend, "get_backend_class", lambda engine_id: DummyBackend)
+    monkeypatch.setitem(
+        sys.modules,
+        "torchaudio",
+        types.SimpleNamespace(
+            save=lambda target, *_args, **_kwargs: (
+                target.write(b"RIFFenginevoice")
+                if hasattr(target, "write")
+                else open(target, "wb").write(b"RIFFenginevoice")
+            )
+        ),
+    )
+
+    res = asyncio.run(
+        generation.generate_speech(
+            text="Read this document chunk",
+            ref_audio=None,
+            ref_text=None,
+            instruct=None,
+            duration=None,
+            num_step=16,
+            guidance_scale=2.0,
+            engine_id="dummy-engine",
+            voice="expr-voice-3-m",
+            speaker_id="2",
+            language="English",
+            speed=1.1,
+            t_shift=None,
+            denoise=True,
+            postprocess_output=True,
+            layer_penalty_factor=None,
+            position_temperature=None,
+            class_temperature=None,
+            profile_id=None,
+            seed=None,
+            request_id=None,
+        )
+    )
+
+    assert res.media_type == "audio/wav"
+    assert captured["text"] == "Read this document chunk"
+    assert captured["kwargs"]["voice"] == "expr-voice-3-m"
+    assert captured["kwargs"]["speaker_id"] == "2"
+    assert captured["kwargs"]["language"] == "English"
+    assert captured["kwargs"]["speed"] == 1.1
 
 
 def test_clone_generation_normalizes_cantonese_language_for_tts(monkeypatch):

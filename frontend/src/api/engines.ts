@@ -4,6 +4,7 @@ import type {
   EngineFamily,
   EngineFamilyResponse,
   SelectEngineResponse,
+  VoicePrepareResponse,
 } from './types';
 
 export interface TranslationEngine {
@@ -45,6 +46,14 @@ export async function listEngines(): Promise<AllEnginesResponse> {
 export async function listTtsBackends(): Promise<EngineFamilyResponse> {
   return apiJson<EngineFamilyResponse>('/engines/tts');
 }
+
+export async function prepareTtsVoice(engineId: string, voiceId: string): Promise<VoicePrepareResponse> {
+  return apiPost<VoicePrepareResponse>(
+    `/engines/tts/${encodeURIComponent(engineId)}/voices/${encodeURIComponent(voiceId)}/prepare`,
+    {},
+  );
+}
+
 export async function listAsrBackends(): Promise<EngineFamilyResponse> {
   return apiJson<EngineFamilyResponse>('/engines/asr');
 }

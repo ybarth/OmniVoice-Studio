@@ -492,6 +492,105 @@
   top: auto;
 }
 
+.settings-voice-catalog {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--chrome-border);
+}
+
+.settings-voice-catalog__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.settings-voice-catalog__head h3 {
+  margin: 0;
+  color: var(--chrome-fg);
+  font-size: var(--text-sm);
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.settings-voice-catalog__head span {
+  display: block;
+  margin-top: 2px;
+  color: var(--chrome-fg-muted);
+  font-size: var(--text-xs);
+}
+
+.settings-voice-catalog__grid {
+  display: grid;
+  gap: 6px;
+  max-height: 300px;
+  overflow: auto;
+}
+
+.settings-voice-catalog__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 150px;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 54px;
+  padding: 8px 10px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  background: var(--chrome-bg-1);
+}
+
+.settings-voice-catalog__row.is-off {
+  opacity: 0.7;
+}
+
+.settings-voice-catalog__voice {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-voice-catalog__voice span {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.settings-voice-catalog__voice strong,
+.settings-voice-catalog__voice small,
+.settings-voice-catalog__voice em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-voice-catalog__voice strong {
+  color: var(--chrome-fg);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.settings-voice-catalog__voice small {
+  color: var(--chrome-fg-muted);
+  font-family: var(--chrome-font-mono);
+  font-size: var(--text-xs);
+}
+
+.settings-voice-catalog__voice em {
+  color: var(--chrome-fg-dim);
+  font-size: var(--text-2xs);
+  font-style: normal;
+}
+
+@media (max-width: 760px) {
+  .settings-voice-catalog__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* ── Credentials tab ────────────────────────────────────────── */
 .settings-credential-status {
   display: grid;

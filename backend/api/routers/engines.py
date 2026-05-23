@@ -14,6 +14,7 @@ a backend without Settings silently undoing it.
 """
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+import asyncio
 import os
 
 from core import prefs
@@ -54,6 +55,22 @@ def list_all_engines():
 @router.get("/engines/tts")
 def list_tts_backends():
     return {"active": tts_backend.active_backend_id(), "backends": tts_backend.list_backends()}
+
+
+@router.post("/engines/tts/{engine_id}/voices/{voice_id}/prepare")
+async def prepare_tts_voice(engine_id: str, voice_id: str):
+    loop = asyncio.get_running_loop()
+    try:
+        return await loop.run_in_executor(
+            None,
+            lambda: tts_backend.prepare_voice(engine_id, voice_id),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/engines/asr")

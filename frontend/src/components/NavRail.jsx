@@ -13,7 +13,8 @@ const ITEMS = [
   { id: 'stories',   label: 'Stories',   Icon: BookOpen,    accent: '#fabd2f' },
   { id: 'gallery',   label: 'Gallery',   Icon: Library,     accent: '#b8bb26' },
   { id: 'transcriptions', label: 'Transcripts', Icon: FileText, accent: '#d3869b' },
-  { id: 'projects',  label: 'OmniDrive',  Icon: FolderOpen,  accent: '#83a598' },
+  { id: 'projects',  label: 'Drive',  Icon: FolderOpen,  accent: '#83a598' },
+  { id: 'document-library', label: 'Document Library', Icon: FileText, accent: '#83a598' },
 ];
 const FOOTER_ITEMS = [
   { id: 'settings', label: 'Settings', Icon: Settings2, accent: '#fabd2f' },

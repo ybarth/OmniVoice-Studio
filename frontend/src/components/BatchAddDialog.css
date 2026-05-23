@@ -91,7 +91,14 @@
   color: var(--chrome-fg-dim);
 }
 .batch-add__file-input {
-  display: none;
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .batch-add__files {

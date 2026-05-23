@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 from core.db import db_conn
 from core.config import OUTPUTS_DIR, VOICES_DIR
 from services.model_manager import get_model, _gpu_pool
+from services import tts_backend
 from services.audio_dsp import apply_mastering, normalize_audio
 from core import event_bus
 from core.text_fields import clean_instruct_text, clean_optional_text
@@ -139,6 +140,72 @@ def _run_inference(
         )
 
 
+def _run_tts_backend_inference(
+    backend,
+    text,
+    language,
+    ref_audio_path,
+    ref_text,
+    instruct,
+    duration,
+    num_step,
+    guidance_scale,
+    speed,
+    denoise,
+    postprocess_output,
+    voice,
+    speaker_id,
+    progress_callback=None,
+):
+    import torch
+    try:
+        if progress_callback:
+            progress_callback(
+                "running",
+                "inferencing",
+                f"Synthesizing audio with {backend.display_name}",
+                None,
+            )
+        kwargs = {
+            "language": language,
+            "ref_audio": ref_audio_path,
+            "ref_text": ref_text,
+            "instruct": instruct,
+            "duration": duration,
+            "num_step": num_step,
+            "guidance_scale": guidance_scale,
+            "speed": speed,
+            "denoise": denoise,
+            "postprocess_output": postprocess_output,
+        }
+        if voice and voice != "default":
+            kwargs["voice"] = voice
+        if speaker_id not in (None, "", "default"):
+            kwargs["speaker_id"] = speaker_id
+        wav = backend.generate(text, **kwargs)
+        sample_rate = int(getattr(backend, "sample_rate", 24000) or 24000)
+        if progress_callback:
+            progress_callback("running", "mastering", "Mastering generated audio", 76)
+        mastered_audio = apply_mastering(wav, sample_rate=sample_rate)
+        normalized_audio = normalize_audio(mastered_audio, target_dBFS=-2.0)
+        if progress_callback:
+            progress_callback("running", "saving", "Preparing generated audio for history", 82)
+        return normalized_audio, sample_rate
+    except ValueError as e:
+        raise e
+    except Exception as e:
+        import gc
+        gc.collect()
+        if torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+        elif torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        raise RuntimeError(
+            f"TTS engine stopped mid-generation. This usually means it ran out of memory. "
+            f"Try the Flush button to reload the model, then regenerate. Underlying error: {e}"
+        )
+
+
 @router.post("/generate")
 async def generate_speech(
     text: str = Form(...),
@@ -157,6 +224,9 @@ async def generate_speech(
     position_temperature: Optional[float] = Form(None),
     class_temperature: Optional[float] = Form(None),
     profile_id: Optional[str] = Form(None),
+    engine_id: Optional[str] = Form(None),
+    voice: Optional[str] = Form(None),
+    speaker_id: Optional[str] = Form(None),
     seed: Optional[int] = Form(None),
     request_id: Optional[str] = Form(None),
 ):
@@ -233,26 +303,62 @@ async def generate_speech(
             )
         language = normalize_tts_language(language)
 
-    _set_generation_status(request_id, "running", "loading_model", "Loading TTS model", 22)
-    try:
-        _model = await get_model()
-    except Exception as e:
-        detail = f"Couldn't load the TTS model: {e}"
-        _set_generation_status(request_id, "error", "error", detail, None, str(e))
-        raise
+    backend = None
+    sample_rate = 24000
+    _model = None
+    if engine_id:
+        _set_generation_status(request_id, "running", "loading_model", "Loading selected TTS engine", 22)
+        try:
+            backend_cls = tts_backend.get_backend_class(engine_id)
+        except ValueError as e:
+            _set_generation_status(request_id, "error", "error", str(e), None, str(e))
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        ok, reason = backend_cls.is_available()
+        if not ok:
+            detail = f"TTS engine {engine_id!r} is not ready: {reason}"
+            _set_generation_status(request_id, "error", "error", detail, None, detail)
+            raise HTTPException(status_code=400, detail=detail)
+        try:
+            if backend_cls is tts_backend.OmniVoiceBackend:
+                _model = await get_model()
+                backend = tts_backend.OmniVoiceBackend(model=_model)
+            else:
+                backend = backend_cls()
+            sample_rate = int(getattr(backend, "sample_rate", 24000) or 24000)
+        except Exception as e:
+            detail = f"Couldn't load the selected TTS engine: {e}"
+            _set_generation_status(request_id, "error", "error", detail, None, str(e))
+            raise
+    else:
+        _set_generation_status(request_id, "running", "loading_model", "Loading TTS model", 22)
+        try:
+            _model = await get_model()
+            sample_rate = int(getattr(_model, "sampling_rate", 24000) or 24000)
+        except Exception as e:
+            detail = f"Couldn't load the TTS model: {e}"
+            _set_generation_status(request_id, "error", "error", detail, None, str(e))
+            raise
     start_time = time.time()
     try:
         loop = asyncio.get_running_loop()
         def _progress(status, phase, detail, progress_pct=None, error=None):
             _set_generation_status(request_id, status, phase, detail, progress_pct, error)
 
-        audio_tensor = await loop.run_in_executor(
-            _gpu_pool, _run_inference,
-            _model, text, language, ref_audio_path, ref_text, instruct, duration,
-            num_step, guidance_scale, speed, t_shift, denoise,
-            postprocess_output, layer_penalty_factor, position_temperature,
-            class_temperature, used_seed, _progress,
-        )
+        if backend is not None:
+            audio_tensor, sample_rate = await loop.run_in_executor(
+                _gpu_pool, _run_tts_backend_inference,
+                backend, text, language, ref_audio_path, ref_text, instruct, duration,
+                num_step, guidance_scale, speed, denoise, postprocess_output,
+                voice, speaker_id, _progress,
+            )
+        else:
+            audio_tensor = await loop.run_in_executor(
+                _gpu_pool, _run_inference,
+                _model, text, language, ref_audio_path, ref_text, instruct, duration,
+                num_step, guidance_scale, speed, t_shift, denoise,
+                postprocess_output, layer_penalty_factor, position_temperature,
+                class_temperature, used_seed, _progress,
+            )
         gen_time = round(time.time() - start_time, 2)
 
         _set_generation_status(request_id, "running", "saving", "Saving generated audio", 84)
@@ -260,9 +366,9 @@ async def generate_speech(
         audio_filename = f"{audio_id}.wav"
         audio_path = os.path.join(OUTPUTS_DIR, audio_filename)
         import torchaudio
-        torchaudio.save(audio_path, audio_tensor, _model.sampling_rate)
+        torchaudio.save(audio_path, audio_tensor, sample_rate)
 
-        audio_dur = round(audio_tensor.shape[-1] / _model.sampling_rate, 2)
+        audio_dur = round(audio_tensor.shape[-1] / sample_rate, 2)
 
         _set_generation_status(request_id, "running", "recording_history", "Updating generated-audio history", 88)
         with db_conn() as conn:
@@ -276,7 +382,7 @@ async def generate_speech(
 
         _set_generation_status(request_id, "running", "encoding", "Encoding generated WAV", 92)
         buffer = io.BytesIO()
-        torchaudio.save(buffer, audio_tensor, _model.sampling_rate, format="wav")
+        torchaudio.save(buffer, audio_tensor, sample_rate, format="wav")
         buffer.seek(0)
         wav_bytes = buffer.read()
 

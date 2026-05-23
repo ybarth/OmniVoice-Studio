@@ -301,7 +301,16 @@
   color: var(--color-fg-muted);
 }
 
-.dub-hidden-file { display: none; }
+.dub-hidden-file {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
 
 .dub-change-row       { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
 .dub-change-row__cta  { flex: 1; margin-top: 0; }
